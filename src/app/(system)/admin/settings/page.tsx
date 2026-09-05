@@ -1182,6 +1182,38 @@ export default function AdminSettingsPage() {
                   </CardContent>
                 </Card>
 
+                {/* Log Retention */}
+                <Card className="rounded-2xl border border-border/80 shadow-xs bg-card">
+                  <CardHeader className="p-5 pb-3 border-b border-border/60 bg-muted/20">
+                    <CardTitle className="text-sm font-bold text-foreground">Retensi Log</CardTitle>
+                    <CardDescription className="text-xs text-muted-foreground mt-0.5">
+                      Log audit dan API request lebih lama dari batas ini akan otomatis dihapus oleh cron harian.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-5 space-y-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Retensi Audit Log (Hari)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={settings.auditLogRetentionDays}
+                        onChange={e => setSettings(prev => ({ ...prev, auditLogRetentionDays: e.target.value }))}
+                        className="h-9 rounded-xl text-xs bg-muted/20 border-border/80"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Retensi API Request Log (Hari)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={settings.apiLogRetentionDays}
+                        onChange={e => setSettings(prev => ({ ...prev, apiLogRetentionDays: e.target.value }))}
+                        className="h-9 rounded-xl text-xs bg-muted/20 border-border/80"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+
                 {/* Edge Cache Purge */}
                 <Card className="rounded-2xl border border-border/80 shadow-xs bg-card">
                   <CardHeader className="p-5 pb-3 border-b border-border/60 bg-muted/20">

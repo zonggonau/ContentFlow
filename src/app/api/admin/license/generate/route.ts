@@ -6,6 +6,7 @@ import crypto from "crypto"
 import { NextResponse } from "next/server"
 import { db } from "@/lib/database"
 import { generateLicenseKey } from "@/lib/license"
+import { logAudit, AuditAction } from "@/lib/audit-log"
 import { withAdminAuth, apiError } from "@/lib/api/route-helpers"
 
 export const POST = withAdminAuth(
@@ -42,6 +43,14 @@ export const POST = withAdminAuth(
         expiresAt: expDate,
         createdBy: session.user.email,
       },
+    })
+
+    logAudit({
+      userId: session.user.id,
+      action: AuditAction.SETTINGS_UPDATED,
+      entity: "EnterpriseLicenseGenerated",
+      entityId: license.id,
+      data: { customerName, customerEmail, organization, type, expiresAt: expDate.toISOString() },
     })
 
     return NextResponse.json({

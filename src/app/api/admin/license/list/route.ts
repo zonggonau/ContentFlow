@@ -7,11 +7,33 @@ import { withAdminAuth } from "@/lib/api/route-helpers"
 
 export const GET = withAdminAuth(
   async (request) => {
-    const status = new URL(request.url).searchParams.get("status") // active | expired | revoked
+    const { searchParams } = new URL(request.url)
+    const status = searchParams.get("status") // active | expired | revoked
+    const search = searchParams.get("search") || ""
+    const page = parseInt(searchParams.get("page") || "1")
+    const limit = parseInt(searchParams.get("limit") || "20")
+
     const where: any = {}
     if (status) where.status = status
+    if (search) {
+      where.OR = [
+        { customerName: { contains: search, mode: "insensitive" } },
+        { customerEmail: { contains: search, mode: "insensitive" } },
+        { organization: { contains: search, mode: "insensitive" } },
+      ]
+    }
 
-    const licenses = await db.enterpriseLicense.findMany({ where, orderBy: { createdAt: "desc" } })
+    const skip = (page - 1) * limit
+
+    const [licenses, total] = await Promise.all([
+      db.enterpriseLicense.findMany({
+        where,
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      db.enterpriseLicense.count({ where }),
+    ])
     const now = new Date()
 
     const enriched = licenses.map((l) => ({
@@ -30,6 +52,6 @@ export const GET = withAdminAuth(
       createdAt: l.createdAt,
     }))
 
-    return NextResponse.json({ licenses: enriched, total: enriched.length })
+    return NextResponse.json({ licenses: enriched, total, page, totalPages: Math.ceil(total / limit) })
   },
 )

@@ -22,7 +22,7 @@ export const GET = withAdminAuth(async (_req, context, { session }) => {
   return NextResponse.json({ licenseKey: license.licenseKey })
 })
 
-export const DELETE = withAdminAuth(async (_req, context) => {
+export const DELETE = withAdminAuth(async (_req, context, { session }) => {
   const { id } = await context.params
 
   const license = await db.enterpriseLicense.findUnique({ where: { id } })
@@ -40,5 +40,14 @@ export const DELETE = withAdminAuth(async (_req, context) => {
   }
 
   await db.enterpriseLicense.delete({ where: { id } })
+
+  logAudit({
+    userId: session.user.id,
+    action: AuditAction.SETTINGS_UPDATED,
+    entity: "EnterpriseLicenseDeleted",
+    entityId: id,
+    data: { customerName: license.customerName, customerEmail: license.customerEmail },
+  })
+
   return NextResponse.json({ success: true, message: "License deleted successfully" })
 })

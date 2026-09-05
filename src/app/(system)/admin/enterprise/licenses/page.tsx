@@ -53,7 +53,9 @@ import {
   ExternalLink,
   Trash2,
   Loader2,
-  Key
+  Key,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -81,7 +83,11 @@ export default function EnterpriseLicensesPage() {
   const [generating, setGenerating] = useState(false)
   const [showGenerate, setShowGenerate] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalLicenses, setTotalLicenses] = useState(0)
   const [form, setForm] = useState({
     customerName: "",
     customerEmail: "",
@@ -97,10 +103,14 @@ export default function EnterpriseLicensesPage() {
 
   const fetchLicenses = async () => {
     try {
-      const res = await fetch("/api/admin/license/list")
+      const params = new URLSearchParams({ page: String(page), limit: "20" })
+      if (debouncedSearch) params.set("search", debouncedSearch)
+      const res = await fetch(`/api/admin/license/list?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
         setLicenses(data.licenses || [])
+        setTotalPages(data.totalPages || 1)
+        setTotalLicenses(data.total || 0)
       }
     } catch (err) {
       toast({
@@ -114,8 +124,16 @@ export default function EnterpriseLicensesPage() {
   }
 
   useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery)
+      setPage(1)
+    }, 400)
+    return () => clearTimeout(handler)
+  }, [searchQuery])
+
+  useEffect(() => {
     fetchLicenses()
-  }, [])
+  }, [debouncedSearch, page])
 
   const handleCopyKey = async (key: string) => {
     try {
@@ -236,19 +254,14 @@ export default function EnterpriseLicensesPage() {
   }
 
   const filteredLicenses = licenses.filter((lic) => {
-    const matchesSearch =
-      lic.customerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lic.customerEmail?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      lic.organization?.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesStatus =
       statusFilter === "all" ||
       (statusFilter === "active" && lic.status === "active" && !lic.isExpired) ||
       (statusFilter === "expired" && (lic.isExpired || lic.status === "expired"))
-    return matchesSearch && matchesStatus
+    return matchesStatus
   })
 
-  const adminRoles = ["super_admin", "admin", "employee", "karyawan"]
-  if (!session?.user || !adminRoles.includes(session.user.role)) {
+  if (!session?.user || session.user.role !== "super_admin") {
     return (
       <div className="flex flex-1 flex-col w-full">
         <div className="flex-1 min-h-[60vh] flex items-center justify-center p-6">
@@ -583,6 +596,33 @@ export default function EnterpriseLicensesPage() {
                   )}
                 </TableBody>
               </Table>
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between p-4 border-t border-border/60">
+                  <span className="text-xs text-muted-foreground">
+                    Halaman {page} dari {totalPages} &bull; {totalLicenses} lisensi total
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      disabled={page <= 1}
+                      className="rounded-lg h-8 text-xs font-bold"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Sebelumnya
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      disabled={page >= totalPages}
+                      className="rounded-lg h-8 text-xs font-bold"
+                    >
+                      Berikutnya <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
