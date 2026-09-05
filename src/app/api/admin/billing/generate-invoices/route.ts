@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { db } from "@/lib/database"
 import { PLAN_PRICES, getDynamicWorkspacePrices, getDynamicAccountPrices } from "@/lib/midtrans"
+import { secureEquals } from "@/lib/secure-compare"
 import { withAdminAuth } from "@/lib/api/route-helpers"
 
 /**
@@ -21,7 +22,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (authHeader !== `Bearer ${cronSecret}`) {
+    if (!secureEquals(authHeader, `Bearer ${cronSecret}`)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
