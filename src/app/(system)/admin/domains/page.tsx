@@ -68,6 +68,7 @@ export default function AdminCustomDomainsPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   
   const [domainToDelete, setDomainToDelete] = useState<CustomDomainItem | null>(null)
@@ -81,10 +82,15 @@ export default function AdminCustomDomainsPage() {
     }
   }, [status, router])
 
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedSearch(search), 400)
+    return () => clearTimeout(handler)
+  }, [search])
+
   const fetchDomains = async () => {
     try {
       let url = "/api/admin/domains"
-      if (search) url += `?search=${encodeURIComponent(search)}`
+      if (debouncedSearch) url += `?search=${encodeURIComponent(debouncedSearch)}`
       const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
@@ -104,7 +110,7 @@ export default function AdminCustomDomainsPage() {
     if (isAdmin) {
       fetchDomains()
     }
-  }, [isAdmin, search])
+  }, [isAdmin, debouncedSearch])
 
   const handleUpdateStatus = async (domainId: string, action: "verify" | "set_pending") => {
     setActionLoading(domainId)
