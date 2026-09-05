@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/database"
+import { diagnoseDomainDns } from "@/lib/domain-dns"
+import { logAudit, AuditAction } from "@/lib/audit-log"
 import { withAdminAuth, apiError } from "@/lib/api/route-helpers"
 
 export const GET = withAdminAuth(
@@ -27,7 +29,7 @@ export const GET = withAdminAuth(
 )
 
 export const POST = withAdminAuth(
-  async (request) => {
+  async (request, _context, { session }) => {
     const { domainId, action } = await request.json()
     if (!domainId) return apiError("validation", { message: "Domain ID is required" })
 
@@ -35,9 +37,26 @@ export const POST = withAdminAuth(
     if (!existingDomain) return apiError("not_found", { message: "Custom domain not found" })
 
     if (action === "verify") {
+      // Run the same live DNS check the tenant-facing verify flow uses —
+      // an admin "Verify" click used to flip status to verified with no
+      // check at all, which could mark a domain the platform can't
+      // actually route to as verified.
+      const diagnostics = await diagnoseDomainDns(existingDomain.domain, existingDomain.tenantId)
+      if (!diagnostics.verified) {
+        return apiError("validation", {
+          message: "DNS check failed — the domain's records do not yet point to SaCMS. Fix DNS and try again.",
+        })
+      }
+
       const updated = await db.customDomain.update({
         where: { id: domainId },
         data: { status: "verified", verifiedAt: new Date() },
+      })
+      logAudit({
+        userId: session.user.id,
+        action: AuditAction.SETTINGS_UPDATED,
+        entity: "CustomDomainVerified",
+        entityId: domainId,
       })
       return NextResponse.json({ success: true, domain: updated })
     }
@@ -45,6 +64,12 @@ export const POST = withAdminAuth(
       const updated = await db.customDomain.update({
         where: { id: domainId },
         data: { status: "pending", verifiedAt: null },
+      })
+      logAudit({
+        userId: session.user.id,
+        action: AuditAction.SETTINGS_UPDATED,
+        entity: "CustomDomainSetPending",
+        entityId: domainId,
       })
       return NextResponse.json({ success: true, domain: updated })
     }

@@ -7,7 +7,19 @@ export const GET = withAdminAuth(
   async () => {
     const [webhooks, recentLogs, deadLetters] = await Promise.all([
       db.webhook.findMany({
-        include: {
+        select: {
+          id: true,
+          tenantId: true,
+          name: true,
+          url: true,
+          enabled: true,
+          lastTriggeredAt: true,
+          failureCount: true,
+          createdAt: true,
+          updatedAt: true,
+          hookType: true,
+          events: true,
+          // secret is deliberately excluded — never return it to the admin UI
           tenant: {
             select: { id: true, name: true, slug: true }
           },
