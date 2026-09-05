@@ -16,7 +16,6 @@ export const GET = withAdminAuth(
 
     const enriched = licenses.map((l) => ({
       id: l.id,
-      licenseKey: l.licenseKey,
       displayKey: `${l.licenseKey.slice(0, 10)}...${l.licenseKey.slice(-6)}`,
       customerName: l.customerName,
       customerEmail: l.customerEmail,
@@ -33,5 +32,4 @@ export const GET = withAdminAuth(
 
     return NextResponse.json({ licenses: enriched, total: enriched.length })
   },
-  { allowRoles: ["admin", "employee", "karyawan"] },
 )

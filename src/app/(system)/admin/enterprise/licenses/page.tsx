@@ -59,7 +59,6 @@ import { cn } from "@/lib/utils"
 
 interface License {
   id: string
-  licenseKey: string
   displayKey?: string
   customerName: string
   customerEmail: string
@@ -127,6 +126,17 @@ export default function EnterpriseLicensesPage() {
         description: "Serial lisensi berhasil disalin ke clipboard",
       })
       setTimeout(() => setCopiedKey(false), 2000)
+    } catch (e: any) {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal menyalin ke clipboard" })
+    }
+  }
+
+  const handleCopyLicenseById = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/license/${id}`)
+      if (!res.ok) throw new Error("reveal failed")
+      const data = await res.json()
+      await handleCopyKey(data.licenseKey)
     } catch {
       toast({
         title: "Gagal menyalin",
@@ -552,7 +562,7 @@ export default function EnterpriseLicensesPage() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground"
-                              onClick={() => handleCopyKey(lic.licenseKey)}
+                              onClick={() => handleCopyLicenseById(lic.id)}
                               title="Salin kunci lisensi"
                             >
                               <Copy className="w-3.5 h-3.5" />

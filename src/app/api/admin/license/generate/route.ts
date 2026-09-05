@@ -53,5 +53,4 @@ export const POST = withAdminAuth(
       expiresAt: license.expiresAt,
     })
   },
-  { allowRoles: ["admin", "employee", "karyawan"] },
 )
