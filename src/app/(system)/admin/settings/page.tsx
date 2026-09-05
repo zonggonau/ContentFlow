@@ -47,6 +47,25 @@ export default function AdminSettingsPage() {
     setShowMasks(prev => ({ ...prev, [field]: !prev[field] }))
   }
 
+  // Secret fields arrive from GET /api/admin/settings pre-masked ("••••••••").
+  // Revealing one fetches the real value on demand (audited server-side) so
+  // plaintext secrets never sit in the page's initial payload.
+  const revealSecret = async (maskField: string, settingsKey: string) => {
+    if (showMasks[maskField]) {
+      setShowMasks(prev => ({ ...prev, [maskField]: false }))
+      return
+    }
+    try {
+      const res = await fetch(`/api/admin/settings/reveal?key=${encodeURIComponent(settingsKey)}`)
+      if (!res.ok) throw new Error("reveal failed")
+      const data = await res.json()
+      setSettings(prev => ({ ...prev, [settingsKey]: data.value ?? "" }))
+      setShowMasks(prev => ({ ...prev, [maskField]: true }))
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal mengambil nilai rahasia." })
+    }
+  }
+
   // Comprehensive Settings State with robust defaults
   const [settings, setSettings] = useState({
     // Tab 1: Workspace & Registration
@@ -459,7 +478,7 @@ export default function AdminSettingsPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">DeepSeek API Key</Label>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleMask('deepseek')}>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('deepseek', 'deepseekApiKey')}>
                           {showMasks.deepseek ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
                           {showMasks.deepseek ? "Sembunyikan" : "Tampilkan"}
                         </Button>
@@ -488,7 +507,7 @@ export default function AdminSettingsPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">OpenAI API Key</Label>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleMask('openai')}>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('openai', 'openaiApiKey')}>
                           {showMasks.openai ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
                           {showMasks.openai ? "Sembunyikan" : "Tampilkan"}
                         </Button>
@@ -517,7 +536,7 @@ export default function AdminSettingsPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Google Gemini API Key</Label>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleMask('gemini')}>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('gemini', 'geminiApiKey')}>
                           {showMasks.gemini ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
                           {showMasks.gemini ? "Sembunyikan" : "Tampilkan"}
                         </Button>
@@ -546,7 +565,7 @@ export default function AdminSettingsPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Anthropic Claude API Key</Label>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleMask('anthropic')}>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('anthropic', 'anthropicApiKey')}>
                           {showMasks.anthropic ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
                           {showMasks.anthropic ? "Sembunyikan" : "Tampilkan"}
                         </Button>
@@ -574,9 +593,15 @@ export default function AdminSettingsPage() {
                     {/* V0 & Vercel */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-border/60">
                       <div className="space-y-1.5">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">v0 by Vercel API Key</Label>
-                        <Input 
-                          type="password"
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">v0 by Vercel API Key</Label>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('v0', 'v0ApiKey')}>
+                            {showMasks.v0 ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                            {showMasks.v0 ? "Sembunyikan" : "Tampilkan"}
+                          </Button>
+                        </div>
+                        <Input
+                          type={showMasks.v0 ? "text" : "password"}
                           value={settings.v0ApiKey}
                           onChange={e => setSettings(prev => ({ ...prev, v0ApiKey: e.target.value }))}
                           placeholder="v1:••••••••••••••••"
@@ -584,9 +609,15 @@ export default function AdminSettingsPage() {
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vercel Access Token</Label>
-                        <Input 
-                          type="password"
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Vercel Access Token</Label>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('vercel', 'vercelAccessToken')}>
+                            {showMasks.vercel ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                            {showMasks.vercel ? "Sembunyikan" : "Tampilkan"}
+                          </Button>
+                        </div>
+                        <Input
+                          type={showMasks.vercel ? "text" : "password"}
                           value={settings.vercelAccessToken}
                           onChange={e => setSettings(prev => ({ ...prev, vercelAccessToken: e.target.value }))}
                           placeholder="vcp_••••••••••••••••"
@@ -620,9 +651,15 @@ export default function AdminSettingsPage() {
                     
                     {/* Resend Section */}
                     <div className="space-y-1.5 p-3.5 bg-muted/20 rounded-xl border border-border/60">
-                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Resend API Key (Prioritas Utama)</Label>
-                      <Input 
-                        type="password"
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Resend API Key (Prioritas Utama)</Label>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('resend', 'resendApiKey')}>
+                          {showMasks.resend ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                          {showMasks.resend ? "Sembunyikan" : "Tampilkan"}
+                        </Button>
+                      </div>
+                      <Input
+                        type={showMasks.resend ? "text" : "password"}
                         value={settings.resendApiKey}
                         onChange={e => setSettings(prev => ({ ...prev, resendApiKey: e.target.value }))}
                         placeholder="re_••••••••••••••••"
@@ -675,9 +712,15 @@ export default function AdminSettingsPage() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] text-muted-foreground">SMTP Password</Label>
-                          <Input 
-                            type="password"
+                          <div className="flex items-center justify-between">
+                            <Label className="text-[10px] text-muted-foreground">SMTP Password</Label>
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('smtp', 'smtpPass')}>
+                              {showMasks.smtp ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                              {showMasks.smtp ? "Sembunyikan" : "Tampilkan"}
+                            </Button>
+                          </div>
+                          <Input
+                            type={showMasks.smtp ? "text" : "password"}
                             value={settings.smtpPass}
                             onChange={e => setSettings(prev => ({ ...prev, smtpPass: e.target.value }))}
                             placeholder="••••••••••••••••"
@@ -780,7 +823,7 @@ export default function AdminSettingsPage() {
                     <div className="space-y-1.5">
                       <div className="flex items-center justify-between">
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Midtrans Server Key</Label>
-                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => toggleMask('midtransServer')}>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('midtransServer', 'midtransServerKey')}>
                           {showMasks.midtransServer ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
                           {showMasks.midtransServer ? "Sembunyikan" : "Tampilkan"}
                         </Button>
@@ -885,9 +928,15 @@ export default function AdminSettingsPage() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-[10px] font-bold text-muted-foreground">Secret Access Key</Label>
-                        <Input 
-                          type="password"
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[10px] font-bold text-muted-foreground">Secret Access Key</Label>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('r2Secret', 'r2SecretAccessKey')}>
+                            {showMasks.r2Secret ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                            {showMasks.r2Secret ? "Sembunyikan" : "Tampilkan"}
+                          </Button>
+                        </div>
+                        <Input
+                          type={showMasks.r2Secret ? "text" : "password"}
                           value={settings.r2SecretAccessKey}
                           onChange={e => setSettings(prev => ({ ...prev, r2SecretAccessKey: e.target.value }))}
                           placeholder="••••••••••••"
@@ -940,9 +989,15 @@ export default function AdminSettingsPage() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Contabo Client Secret</Label>
-                      <Input 
-                        type="password"
+                      <div className="flex items-center justify-between">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Contabo Client Secret</Label>
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('contaboSecret', 'contaboClientSecret')}>
+                          {showMasks.contaboSecret ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                          {showMasks.contaboSecret ? "Sembunyikan" : "Tampilkan"}
+                        </Button>
+                      </div>
+                      <Input
+                        type={showMasks.contaboSecret ? "text" : "password"}
                         value={settings.contaboClientSecret}
                         onChange={e => setSettings(prev => ({ ...prev, contaboClientSecret: e.target.value }))}
                         placeholder="DZtSUAEP••••••••"
@@ -960,9 +1015,15 @@ export default function AdminSettingsPage() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label className="text-[10px] font-bold text-muted-foreground">API Password</Label>
-                        <Input 
-                          type="password"
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[10px] font-bold text-muted-foreground">API Password</Label>
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealSecret('contaboPass', 'contaboApiPassword')}>
+                            {showMasks.contaboPass ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                            {showMasks.contaboPass ? "Sembunyikan" : "Tampilkan"}
+                          </Button>
+                        </div>
+                        <Input
+                          type={showMasks.contaboPass ? "text" : "password"}
                           value={settings.contaboApiPassword}
                           onChange={e => setSettings(prev => ({ ...prev, contaboApiPassword: e.target.value }))}
                           placeholder="••••••••••••"
