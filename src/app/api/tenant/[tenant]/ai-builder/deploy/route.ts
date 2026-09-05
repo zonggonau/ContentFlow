@@ -32,7 +32,7 @@ export const GET = withStaffAuth(async (_req, _context, { access, session }) => 
         })
       : null
     const hasDedicatedVps = hostingTarget === "vps"
-    const vpsUrl = settings.find(s => s.key === `${tenantId}_vpsDeploymentUrl`)?.value || (vpsServer?.serverIpv4 ? `http://${vpsServer.serverIpv4}` : null)
+    const vpsUrl = settings.find(s => s.key === `${tenantId}_vpsDeploymentUrl`)?.value || (vpsServer?.ipv4 ? `http://${vpsServer.ipv4}` : null)
 
     const isPaid = isTenantPlanPaid(tenant.plan) || session.user.role === "super_admin"
     const isEnterprise = Boolean(tenant.plan?.toLowerCase().includes("enterprise") || session.user.role === "super_admin")
@@ -45,7 +45,7 @@ export const GET = withStaffAuth(async (_req, _context, { access, session }) => 
       hasDedicatedVps,
       hostingTarget,
       isPaid,
-      vpsIp: vpsServer?.serverIpv4 || null,
+      vpsIp: vpsServer?.ipv4 || null,
       vpsServerName: vpsServer?.name || null,
       vpsDeploymentUrl: vpsUrl,
       vercelDeploymentUrl: vercelUrl,
