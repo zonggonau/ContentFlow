@@ -19,6 +19,8 @@ import {
   Shield,
   Loader2,
   RotateCw,
+  Play,
+  Square,
   FolderSync,
   Globe,
   Zap,
@@ -283,7 +285,7 @@ export default function AdminInfrastructurePage() {
     }
   }
 
-  const handleAction = async (serverId: string, action: "health-check" | "restart" | "sync-schema" | "sync-dns" | "test-db") => {
+  const handleAction = async (serverId: string, action: "health-check" | "restart" | "start" | "stop" | "sync-schema" | "sync-dns" | "test-db") => {
     const actionKey = `${serverId}-${action}`
     setActionLoadingKey(actionKey)
     try {
@@ -787,8 +789,38 @@ export default function AdminInfrastructurePage() {
 
                 </div>
 
-                {/* Danger Zone: Reboot & Terminate */}
-                <div className="pt-2 border-t mt-3 flex items-center justify-between gap-2">
+                {/* Power Controls: Start / Stop / Restart */}
+                <div className="pt-2 border-t mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={actionLoadingKey === `${troubleshootServer.id}-start`}
+                    onClick={() => handleAction(troubleshootServer.id, "start")}
+                    className="h-8 text-xs font-bold gap-1.5 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10"
+                  >
+                    {actionLoadingKey === `${troubleshootServer.id}-start` ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Play className="h-3.5 w-3.5" />
+                    )}
+                    Start VPS
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={actionLoadingKey === `${troubleshootServer.id}-stop`}
+                    onClick={() => handleAction(troubleshootServer.id, "stop")}
+                    className="h-8 text-xs font-bold gap-1.5 border-slate-500/40 text-slate-600 hover:bg-slate-500/10"
+                  >
+                    {actionLoadingKey === `${troubleshootServer.id}-stop` ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Square className="h-3.5 w-3.5" />
+                    )}
+                    Stop VPS
+                  </Button>
+
                   <Button
                     size="sm"
                     variant="outline"
@@ -808,7 +840,7 @@ export default function AdminInfrastructurePage() {
                     size="sm"
                     variant="destructive"
                     onClick={() => setServerToDelete(troubleshootServer)}
-                    className="h-8 text-xs font-bold gap-1.5"
+                    className="h-8 text-xs font-bold gap-1.5 ml-auto"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Hapus / Nonaktifkan Server

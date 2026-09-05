@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/database"
 import { decryptCredential } from "@/lib/infrastructure/encryption"
-import { checkServerHealth, restartServer, destroyServer, syncServerDns } from "@/lib/infrastructure/provisioner"
+import { checkServerHealth, restartServer, startServer, stopServer, destroyServer, syncServerDns } from "@/lib/infrastructure/provisioner"
+import { logAudit, AuditAction } from "@/lib/audit-log"
 import { deployTenantDatabaseSchema, testDatabaseConnection } from "@/lib/infrastructure/migration-runner"
 import { withAdminAuth, apiError } from "@/lib/api/route-helpers"
 
@@ -39,7 +40,7 @@ export const GET = withAdminAuth(async (_req, context) => {
   })
 })
 
-export const POST = withAdminAuth(async (req, context) => {
+export const POST = withAdminAuth(async (req, context, { session }) => {
   const { id } = await context.params
   const { action } = await req.json()
 
@@ -48,7 +49,18 @@ export const POST = withAdminAuth(async (req, context) => {
       return NextResponse.json(await checkServerHealth(id))
     case "restart": {
       const ok = await restartServer(id)
+      logAudit({ userId: session.user.id, action: AuditAction.SETTINGS_UPDATED, entity: "InfrastructureServerRestart", entityId: id, data: { success: ok } })
       return NextResponse.json({ success: ok, message: ok ? "Restart signal sent to VPS" : "Restart failed" })
+    }
+    case "stop": {
+      const ok = await stopServer(id)
+      logAudit({ userId: session.user.id, action: AuditAction.SETTINGS_UPDATED, entity: "InfrastructureServerStop", entityId: id, data: { success: ok } })
+      return NextResponse.json({ success: ok, message: ok ? "Stop signal sent to VPS" : "Stop failed" })
+    }
+    case "start": {
+      const ok = await startServer(id)
+      logAudit({ userId: session.user.id, action: AuditAction.SETTINGS_UPDATED, entity: "InfrastructureServerStart", entityId: id, data: { success: ok } })
+      return NextResponse.json({ success: ok, message: ok ? "Start signal sent to VPS" : "Start failed" })
     }
     case "sync-dns":
       return NextResponse.json(await syncServerDns(id))

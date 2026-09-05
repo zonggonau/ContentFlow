@@ -475,6 +475,7 @@ export async function restartServer(serverId: string): Promise<boolean> {
   return restartContaboInstance(server.providerServerId)
 }
 
+
 /**
  * Destroy server and clean up DNS and credentials
  */
