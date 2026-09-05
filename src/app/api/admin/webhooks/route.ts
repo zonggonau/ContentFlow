@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/database"
+import { logAudit, AuditAction } from "@/lib/audit-log"
 import { withAdminAuth, apiError } from "@/lib/api/route-helpers"
 import { safeFetch } from "@/lib/safe-url"
 
@@ -72,7 +73,7 @@ export const GET = withAdminAuth(
 )
 
 export const POST = withAdminAuth(
-  async (request) => {
+  async (request, _context, { session }) => {
     const { deadLetterId, action } = await request.json()
 
     if (action === "retry" && deadLetterId) {
@@ -158,7 +159,13 @@ export const POST = withAdminAuth(
     }
 
     if (action === "purge_all") {
-      await db.webhookDeadLetter.deleteMany({})
+      const { count } = await db.webhookDeadLetter.deleteMany({})
+      logAudit({
+        userId: session.user.id,
+        action: AuditAction.SETTINGS_UPDATED,
+        entity: "WebhookDeadLetterQueuePurged",
+        data: { count },
+      })
       return NextResponse.json({ success: true, message: "Dead letter queue purged" })
     }
 
