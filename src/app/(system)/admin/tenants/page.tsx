@@ -147,7 +147,7 @@ export default function AdminTenantsPage() {
 
   const handleStatusChange = async (id: string, status: string) => {
     try {
-      const res = await fetch(`/api/admin/tenants/${id}/status`, {
+      const res = await fetch(`/api/admin/tenants/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -169,10 +169,19 @@ export default function AdminTenantsPage() {
     if (!overrideTenant) return
     setOverrideLoading(true)
     try {
-      const res = await fetch(`/api/admin/tenants/${overrideTenant.id}/overrides`, {
-        method: "PUT",
+      const toNullableInt = (v: string) => (v.trim() === "" ? null : parseInt(v, 10))
+      const res = await fetch(`/api/admin/tenants/${overrideTenant.id}/override`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(overrideFormData),
+        body: JSON.stringify({
+          maxContentTypes: toNullableInt(overrideFormData.maxContentTypes),
+          maxContentEntries: toNullableInt(overrideFormData.maxContentEntries),
+          maxTeamMembers: toNullableInt(overrideFormData.maxTeamMembers),
+          maxStorage: toNullableInt(overrideFormData.maxStorage),
+          maxLocales: toNullableInt(overrideFormData.maxLocales),
+          maxApiCalls: toNullableInt(overrideFormData.maxApiCalls),
+          note: overrideFormData.note.trim() === "" ? null : overrideFormData.note,
+        }),
       })
       if (res.ok) {
         toast({ title: "Berhasil", description: "Batas limit khusus workspace berhasil disimpan" })
@@ -244,18 +253,18 @@ export default function AdminTenantsPage() {
     setOverrideLoading(true)
     
     try {
-      const res = await fetch(`/api/admin/tenants/${tenant.id}/overrides`)
+      const res = await fetch(`/api/admin/tenants/${tenant.id}/override`)
       if (res.ok) {
         const data = await res.json()
-        if (data.overrides) {
+        if (data.override) {
           setOverrideFormData({
-            maxContentTypes: data.overrides.maxContentTypes?.toString() || "",
-            maxContentEntries: data.overrides.maxContentEntries?.toString() || "",
-            maxTeamMembers: data.overrides.maxTeamMembers?.toString() || "",
-            maxStorage: data.overrides.maxStorage?.toString() || "",
-            maxLocales: data.overrides.maxLocales?.toString() || "",
-            maxApiCalls: data.overrides.maxApiCalls?.toString() || "",
-            note: data.overrides.note || ""
+            maxContentTypes: data.override.maxContentTypes?.toString() || "",
+            maxContentEntries: data.override.maxContentEntries?.toString() || "",
+            maxTeamMembers: data.override.maxTeamMembers?.toString() || "",
+            maxStorage: data.override.maxStorage?.toString() || "",
+            maxLocales: data.override.maxLocales?.toString() || "",
+            maxApiCalls: data.override.maxApiCalls?.toString() || "",
+            note: data.override.note || ""
           })
         }
       }
