@@ -17,7 +17,9 @@ import {
   Loader2,
   Plus,
   ArrowUpRight,
-  Info
+  Info,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -69,6 +71,11 @@ export default function AdminCustomDomainsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalDomains, setTotalDomains] = useState(0)
+  const [verifiedCount, setVerifiedCount] = useState(0)
+  const [pendingCount, setPendingCount] = useState(0)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   
   const [domainToDelete, setDomainToDelete] = useState<CustomDomainItem | null>(null)
@@ -83,18 +90,25 @@ export default function AdminCustomDomainsPage() {
   }, [status, router])
 
   useEffect(() => {
-    const handler = setTimeout(() => setDebouncedSearch(search), 400)
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 400)
     return () => clearTimeout(handler)
   }, [search])
 
   const fetchDomains = async () => {
     try {
-      let url = "/api/admin/domains"
-      if (debouncedSearch) url += `?search=${encodeURIComponent(debouncedSearch)}`
-      const res = await fetch(url)
+      const params = new URLSearchParams({ page: String(page), limit: "20" })
+      if (debouncedSearch) params.set("search", debouncedSearch)
+      const res = await fetch(`/api/admin/domains?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
         setDomains(data.domains || [])
+        setTotalPages(data.totalPages || 1)
+        setTotalDomains(data.total || 0)
+        setVerifiedCount(data.verifiedCount || 0)
+        setPendingCount(data.pendingCount || 0)
       } else {
         toast({ variant: "destructive", title: "Gagal", description: "Gagal memuat data custom domain" })
       }
@@ -110,7 +124,7 @@ export default function AdminCustomDomainsPage() {
     if (isAdmin) {
       fetchDomains()
     }
-  }, [isAdmin, debouncedSearch])
+  }, [isAdmin, debouncedSearch, page])
 
   const handleUpdateStatus = async (domainId: string, action: "verify" | "set_pending") => {
     setActionLoading(domainId)
@@ -177,8 +191,6 @@ export default function AdminCustomDomainsPage() {
     )
   }
 
-  const verifiedCount = domains.filter(d => d.status === "verified").length
-  const pendingCount = domains.filter(d => d.status === "pending").length
 
   return (
     <div className="flex flex-1 flex-col w-full">
@@ -223,7 +235,7 @@ export default function AdminCustomDomainsPage() {
                 </div>
               </CardHeader>
               <CardContent className="p-5 pt-0">
-                <div className="text-2xl font-black text-foreground tracking-tight">{domains.length}</div>
+                <div className="text-2xl font-black text-foreground tracking-tight">{totalDomains}</div>
                 <p className="text-[11px] text-muted-foreground mt-1">Domain terdaftar pada seluruh workspace</p>
               </CardContent>
             </Card>
@@ -407,6 +419,33 @@ export default function AdminCustomDomainsPage() {
                 </tbody>
               </table>
             </div>
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between p-4 border-t border-border/60">
+                <span className="text-xs text-muted-foreground">
+                  Halaman {page} dari {totalPages} &bull; {totalDomains} domain total
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="rounded-lg h-8 text-xs font-bold"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Sebelumnya
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="rounded-lg h-8 text-xs font-bold"
+                  >
+                    Berikutnya <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       </div>

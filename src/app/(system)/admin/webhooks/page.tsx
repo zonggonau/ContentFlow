@@ -17,7 +17,9 @@ import {
   RotateCcw,
   Zap,
   Clock,
-  Code
+  Code,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -105,7 +107,14 @@ export default function AdminWebhooksPage() {
   const [logs, setLogs] = useState<WebhookLogItem[]>([])
   const [deadLetters, setDeadLetters] = useState<DeadLetterItem[]>([])
   const [stats, setStats] = useState<any>(null)
-  
+
+  const [webhooksPage, setWebhooksPage] = useState(1)
+  const [webhooksTotalPages, setWebhooksTotalPages] = useState(1)
+  const [logsPage, setLogsPage] = useState(1)
+  const [logsTotalPages, setLogsTotalPages] = useState(1)
+  const [dlqPage, setDlqPage] = useState(1)
+  const [dlqTotalPages, setDlqTotalPages] = useState(1)
+
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [retryingId, setRetryingId] = useState<string | null>(null)
@@ -121,13 +130,21 @@ export default function AdminWebhooksPage() {
 
   const fetchData = async () => {
     try {
-      const res = await fetch("/api/admin/webhooks")
+      const params = new URLSearchParams({
+        webhooksPage: String(webhooksPage),
+        logsPage: String(logsPage),
+        dlqPage: String(dlqPage),
+      })
+      const res = await fetch(`/api/admin/webhooks?${params.toString()}`)
       if (res.ok) {
         const data = await res.json()
         setWebhooks(data.webhooks || [])
         setLogs(data.recentLogs || [])
         setDeadLetters(data.deadLetters || [])
         setStats(data.stats || null)
+        setWebhooksTotalPages(data.webhooksTotalPages || 1)
+        setLogsTotalPages(data.logsTotalPages || 1)
+        setDlqTotalPages(data.dlqTotalPages || 1)
       } else {
         toast({ variant: "destructive", title: "Gagal", description: "Gagal memuat data webhook" })
       }
@@ -143,7 +160,7 @@ export default function AdminWebhooksPage() {
     if (isAdmin) {
       fetchData()
     }
-  }, [isAdmin])
+  }, [isAdmin, webhooksPage, logsPage, dlqPage])
 
   const handleRetry = async (deadLetterId: string) => {
     setRetryingId(deadLetterId)
@@ -167,6 +184,35 @@ export default function AdminWebhooksPage() {
     } finally {
       setRetryingId(null)
     }
+  }
+
+  const Pager = ({ page, totalPages, onChange }: { page: number; totalPages: number; onChange: (p: number) => void }) => {
+    if (totalPages <= 1) return null
+    return (
+      <div className="flex items-center justify-between p-4 border-t border-border/60">
+        <span className="text-xs text-muted-foreground">Halaman {page} dari {totalPages}</span>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onChange(Math.max(1, page - 1))}
+            disabled={page <= 1}
+            className="rounded-lg h-8 text-xs font-bold"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Sebelumnya
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onChange(Math.min(totalPages, page + 1))}
+            disabled={page >= totalPages}
+            className="rounded-lg h-8 text-xs font-bold"
+          >
+            Berikutnya <ChevronRight className="h-3.5 w-3.5 ml-1" />
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   const handlePurgeAll = async () => {
@@ -430,6 +476,7 @@ export default function AdminWebhooksPage() {
                     </tbody>
                   </table>
                 </div>
+                <Pager page={dlqPage} totalPages={dlqTotalPages} onChange={setDlqPage} />
               </Card>
             </TabsContent>
 
@@ -488,6 +535,7 @@ export default function AdminWebhooksPage() {
                     </tbody>
                   </table>
                 </div>
+                <Pager page={logsPage} totalPages={logsTotalPages} onChange={setLogsPage} />
               </Card>
             </TabsContent>
 
@@ -551,6 +599,7 @@ export default function AdminWebhooksPage() {
                     </tbody>
                   </table>
                 </div>
+                <Pager page={webhooksPage} totalPages={webhooksTotalPages} onChange={setWebhooksPage} />
               </Card>
             </TabsContent>
 

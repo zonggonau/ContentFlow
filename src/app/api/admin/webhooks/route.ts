@@ -5,8 +5,17 @@ import { withAdminAuth, apiError } from "@/lib/api/route-helpers"
 import { safeFetch } from "@/lib/safe-url"
 
 export const GET = withAdminAuth(
-  async () => {
-    const [webhooks, recentLogs, deadLetters] = await Promise.all([
+  async (request) => {
+    const { searchParams } = request.nextUrl
+    const webhooksPage = parseInt(searchParams.get("webhooksPage") || "1")
+    const logsPage = parseInt(searchParams.get("logsPage") || "1")
+    const dlqPage = parseInt(searchParams.get("dlqPage") || "1")
+    const PAGE_SIZE = 30
+
+    const [
+      webhooks, webhooksTotal, recentLogs, logsTotal, deadLetters, dlqTotal,
+      activeWebhooksCount, successLogsCount, failedLogsCount,
+    ] = await Promise.all([
       db.webhook.findMany({
         select: {
           id: true,
@@ -29,8 +38,10 @@ export const GET = withAdminAuth(
           }
         },
         orderBy: { updatedAt: "desc" },
-        take: 50
+        skip: (webhooksPage - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
       }),
+      db.webhook.count(),
       db.webhookLog.findMany({
         include: {
           webhook: {
@@ -38,8 +49,10 @@ export const GET = withAdminAuth(
           }
         },
         orderBy: { createdAt: "desc" },
-        take: 30
+        skip: (logsPage - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
       }),
+      db.webhookLog.count(),
       db.webhookDeadLetter.findMany({
         include: {
           webhook: {
@@ -52,20 +65,31 @@ export const GET = withAdminAuth(
           }
         },
         orderBy: { createdAt: "desc" },
-        take: 50
-      })
+        skip: (dlqPage - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+      }),
+      db.webhookDeadLetter.count(),
+      db.webhook.count({ where: { enabled: true } }),
+      db.webhookLog.count({ where: { success: true } }),
+      db.webhookLog.count({ where: { success: false } }),
     ])
 
     return NextResponse.json({
       webhooks,
+      webhooksPage,
+      webhooksTotalPages: Math.ceil(webhooksTotal / PAGE_SIZE),
       recentLogs,
+      logsPage,
+      logsTotalPages: Math.ceil(logsTotal / PAGE_SIZE),
       deadLetters,
+      dlqPage,
+      dlqTotalPages: Math.ceil(dlqTotal / PAGE_SIZE),
       stats: {
-        totalWebhooks: webhooks.length,
-        activeWebhooks: webhooks.filter(w => w.enabled).length,
-        deadLetterCount: deadLetters.length,
-        successLogsCount: recentLogs.filter(l => l.success).length,
-        failedLogsCount: recentLogs.filter(l => !l.success).length,
+        totalWebhooks: webhooksTotal,
+        activeWebhooks: activeWebhooksCount,
+        deadLetterCount: dlqTotal,
+        successLogsCount: successLogsCount,
+        failedLogsCount: failedLogsCount,
       }
     })
   },

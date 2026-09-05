@@ -6,7 +6,10 @@ import { withAdminAuth, apiError } from "@/lib/api/route-helpers"
 
 export const GET = withAdminAuth(
   async (request) => {
-    const search = new URL(request.url).searchParams.get("search") || ""
+    const { searchParams } = request.nextUrl
+    const search = searchParams.get("search") || ""
+    const page = parseInt(searchParams.get("page") || "1")
+    const limit = parseInt(searchParams.get("limit") || "20")
     const where: any = {}
     if (search) {
       where.OR = [
@@ -16,14 +19,30 @@ export const GET = withAdminAuth(
       ]
     }
 
-    const domains = await db.customDomain.findMany({
-      where,
-      include: {
-        tenant: { select: { id: true, name: true, slug: true, plan: true, status: true } },
-      },
-      orderBy: { createdAt: "desc" },
+    const skip = (page - 1) * limit
+
+    const [domains, total, verifiedCount, pendingCount] = await Promise.all([
+      db.customDomain.findMany({
+        where,
+        include: {
+          tenant: { select: { id: true, name: true, slug: true, plan: true, status: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      db.customDomain.count({ where }),
+      db.customDomain.count({ where: { ...where, status: "verified" } }),
+      db.customDomain.count({ where: { ...where, status: "pending" } }),
+    ])
+    return NextResponse.json({
+      domains,
+      total,
+      page,
+      totalPages: Math.ceil(total / limit),
+      verifiedCount,
+      pendingCount,
     })
-    return NextResponse.json({ domains })
   },
   { allowRoles: ["admin"] },
 )
