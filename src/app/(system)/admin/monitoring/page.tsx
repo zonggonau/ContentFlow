@@ -42,11 +42,18 @@ interface ApiRequest {
   createdAt: string
 }
 
+interface ComponentHealth {
+  name: string
+  status: "HEALTHY" | "DOWN" | "CONFIGURED" | "NOT_CONFIGURED" | "RUNNING" | "UNKNOWN"
+  detail: string
+}
+
 export default function AdminMonitoringPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
   
   const [metrics, setMetrics] = useState<SystemMetric[]>([])
+  const [componentHealth, setComponentHealth] = useState<ComponentHealth[]>([])
   const [apiRequests, setApiRequests] = useState<ApiRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -88,6 +95,7 @@ export default function AdminMonitoringPage() {
       if (metricsRes.ok) {
         const data = await metricsRes.json()
         setMetrics(data.metrics || [])
+        setComponentHealth(data.componentHealth || [])
       }
 
       if (requestsRes.ok) {
@@ -360,20 +368,33 @@ export default function AdminMonitoringPage() {
                 <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Status Komponen Platform</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2.5 p-4">
-                {[
-                  { name: "API Gateway", status: "HEALTHY", icon: CheckCircle2, color: "text-emerald-500" },
-                  { name: "Database Cluster", status: "HEALTHY", icon: CheckCircle2, color: "text-emerald-500" },
-                  { name: "Payment Gateway Midtrans", status: "CONNECTED", icon: CheckCircle2, color: "text-emerald-500" },
-                  { name: "Webhook Worker", status: "RUNNING", icon: CheckCircle2, color: "text-emerald-500" },
-                ].map(s => (
-                  <div key={s.name} className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/10 font-mono">
-                    <span className="text-xs font-bold text-foreground">{s.name}</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">{s.status}</span>
-                      <s.icon className={cn("h-4 w-4", s.color)} />
-                    </div>
-                  </div>
-                ))}
+                {componentHealth.length === 0 ? (
+                  <div className="text-xs text-muted-foreground p-3">Memuat status komponen...</div>
+                ) : (
+                  componentHealth.map(s => {
+                    const isHealthy = s.status === "HEALTHY" || s.status === "CONFIGURED" || s.status === "RUNNING"
+                    const isDown = s.status === "DOWN"
+                    const Icon = isHealthy ? CheckCircle2 : AlertTriangle
+                    const color = isHealthy ? "text-emerald-500" : isDown ? "text-rose-500" : "text-amber-500"
+                    const badgeClass = isHealthy
+                      ? "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                      : isDown
+                        ? "text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/20"
+                        : "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20"
+                    return (
+                      <div key={s.name} className="flex items-center justify-between p-3 rounded-xl border border-border/60 bg-muted/10 font-mono">
+                        <div>
+                          <span className="text-xs font-bold text-foreground">{s.name}</span>
+                          <div className="text-[9px] text-muted-foreground">{s.detail}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", badgeClass)}>{s.status}</span>
+                          <Icon className={cn("h-4 w-4", color)} />
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
               </CardContent>
             </Card>
 
