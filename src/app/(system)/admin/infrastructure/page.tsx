@@ -501,15 +501,17 @@ export default function AdminInfrastructurePage() {
                           {server.status === "active" && (
                             <div className="mt-1.5 pt-1 border-t border-border/40 space-y-1">
                               <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                <span>CPU: {server.metricsSnapshot?.cpuUsagePercent ?? 12}%</span>
-                                <span>RAM: {server.metricsSnapshot?.ramUsagePercent ?? 22}%</span>
+                                <span>CPU: {server.metricsSnapshot?.cpuUsagePercent != null ? `${server.metricsSnapshot.cpuUsagePercent}%` : "Tidak tersedia"}</span>
+                                <span>RAM: {server.metricsSnapshot?.ramUsagePercent != null ? `${server.metricsSnapshot.ramUsagePercent}%` : "Tidak tersedia"}</span>
                               </div>
-                              <div className="w-full bg-muted h-1 rounded-full overflow-hidden flex">
-                                <div 
-                                  className="bg-emerald-500 h-full rounded-full transition-all" 
-                                  style={{ width: `${Math.min(100, server.metricsSnapshot?.ramUsagePercent ?? 22)}%` }} 
-                                />
-                              </div>
+                              {server.metricsSnapshot?.ramUsagePercent != null && (
+                                <div className="w-full bg-muted h-1 rounded-full overflow-hidden flex">
+                                  <div
+                                    className="bg-emerald-500 h-full rounded-full transition-all"
+                                    style={{ width: `${Math.min(100, server.metricsSnapshot.ramUsagePercent)}%` }}
+                                  />
+                                </div>
+                              )}
                             </div>
                           )}
                         </TableCell>
@@ -648,26 +650,26 @@ export default function AdminInfrastructurePage() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                     <div className="p-2 bg-muted/40 rounded-lg border border-border/40">
                       <div className="text-[10px] text-muted-foreground font-semibold">Beban CPU</div>
-                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.cpuUsagePercent ?? 12}%</div>
+                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.cpuUsagePercent != null ? `${troubleshootServer.metricsSnapshot.cpuUsagePercent}%` : "Tidak tersedia"}</div>
                       <div className="text-[9px] text-muted-foreground">{troubleshootServer.cpuCount} Cores (Active)</div>
                     </div>
 
                     <div className="p-2 bg-muted/40 rounded-lg border border-border/40">
                       <div className="text-[10px] text-muted-foreground font-semibold">Alokasi RAM</div>
-                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.ramUsagePercent ?? 22}%</div>
-                      <div className="text-[9px] text-muted-foreground">{((troubleshootServer.metricsSnapshot?.ramUsageMb ?? 1792) / 1024).toFixed(1)} / {troubleshootServer.ramMb / 1024} GB</div>
+                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.ramUsagePercent != null ? `${troubleshootServer.metricsSnapshot.ramUsagePercent}%` : "Tidak tersedia"}</div>
+                      <div className="text-[9px] text-muted-foreground">{troubleshootServer.metricsSnapshot?.ramUsageMb != null ? `${(troubleshootServer.metricsSnapshot.ramUsageMb / 1024).toFixed(1)} / ${troubleshootServer.ramMb / 1024} GB` : `-- / ${troubleshootServer.ramMb / 1024} GB`}</div>
                     </div>
 
                     <div className="p-2 bg-muted/40 rounded-lg border border-border/40">
                       <div className="text-[10px] text-muted-foreground font-semibold">Penyimpanan NVMe</div>
-                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.diskUsagePercent ?? 6}%</div>
-                      <div className="text-[9px] text-muted-foreground">{troubleshootServer.metricsSnapshot?.diskUsageGb ?? 4.5} / {troubleshootServer.diskGb} GB</div>
+                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.diskUsagePercent != null ? `${troubleshootServer.metricsSnapshot.diskUsagePercent}%` : "Tidak tersedia"}</div>
+                      <div className="text-[9px] text-muted-foreground">{troubleshootServer.metricsSnapshot?.diskUsageGb != null ? `${troubleshootServer.metricsSnapshot.diskUsageGb} / ${troubleshootServer.diskGb} GB` : `-- / ${troubleshootServer.diskGb} GB`}</div>
                     </div>
 
                     <div className="p-2 bg-muted/40 rounded-lg border border-border/40">
                       <div className="text-[10px] text-muted-foreground font-semibold">Koneksi DB Pool</div>
-                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.dbConnectionsActive ?? 4} <span className="text-[10px] font-normal text-muted-foreground">/ 100</span></div>
-                      <div className="text-[9px] text-emerald-500 font-semibold">Latensi: {troubleshootServer.metricsSnapshot?.dbLatencyMs ?? 12}ms</div>
+                      <div className="text-sm font-black text-foreground mt-0.5">{troubleshootServer.metricsSnapshot?.dbConnectionsActive != null ? <>{troubleshootServer.metricsSnapshot.dbConnectionsActive} <span className="text-[10px] font-normal text-muted-foreground">/ 100</span></> : "Tidak tersedia"}</div>
+                      <div className="text-[9px] text-emerald-500 font-semibold">{troubleshootServer.metricsSnapshot?.dbLatencyMs != null ? `Latensi: ${troubleshootServer.metricsSnapshot.dbLatencyMs}ms` : "Latensi tidak tersedia"}</div>
                     </div>
                   </div>
                 </div>
