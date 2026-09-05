@@ -122,10 +122,21 @@ export default function AdminTransactionsPage() {
 
   const handleSync = async (orderId: string) => {
     toast({ title: "Menyinkronkan status..." })
-    setTimeout(() => {
-      fetchTransactions(page)
-      toast({ title: "Status Berhasil Disinkronkan" })
-    }, 800)
+    try {
+      const res = await fetch(`/api/billing/payment/${encodeURIComponent(orderId)}/status`)
+      const data = await res.json()
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Gagal Sinkronisasi", description: data.error || "Gagal memeriksa status transaksi ke Midtrans" })
+        return
+      }
+      await fetchTransactions(page)
+      toast({
+        title: data.status === "pending" ? "Status Belum Berubah" : "Status Berhasil Disinkronkan",
+        description: `Status transaksi saat ini: ${data.status}`,
+      })
+    } catch (err) {
+      toast({ variant: "destructive", title: "Terjadi Kesalahan", description: "Terjadi kesalahan jaringan saat sinkronisasi" })
+    }
   }
 
   const getStatusBadge = (status: string) => {
