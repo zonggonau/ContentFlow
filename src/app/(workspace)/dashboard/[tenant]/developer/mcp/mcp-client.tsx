@@ -274,7 +274,7 @@ const PLATFORMS: PlatformInfo[] = [
     steps: [
       "Buka panel Cline di VS Code → klik icon Settings (Gear) → MCP Servers.",
       "Tambahkan konfigurasi server 'sacms'.",
-      "Cline akan menampilkan daftar 36 tools aktif yang siap digunakan."
+      "Cline akan menampilkan daftar 39 tools aktif yang siap digunakan."
     ]
   },
   {
@@ -349,22 +349,27 @@ const MCP_TOOLS_CATALOG: McpToolDoc[] = [
   { name: "update_content_type", category: "schema", description: "Memperbarui nama/deskripsi Content Type, atau menambah/mengganti field skemanya.", inputs: ["slug", "name", "description", "fields"] },
   { name: "delete_content_type", category: "schema", description: "Menghapus permanen Content Type, skema field-nya, dan seluruh entri konten tersimpan di dalamnya.", inputs: ["slug"] },
 
-  { name: "query_content", category: "content", description: "Mengambil entri konten (published atau draft) dari satu Content Type dengan pagination, pencarian, dan sorting.", inputs: ["contentTypeSlug", "page", "limit", "status", "search", "sortOrder"] },
-  { name: "create_content_entry", category: "content", description: "Menambahkan entri konten baru ke sebuah Content Type dengan payload data JSON.", inputs: ["contentTypeSlug", "data", "status"] },
+  { name: "query_content", category: "content", description: "Mengambil entri konten (published atau draft) dari satu Content Type dengan pagination, pencarian, dan sorting.", inputs: ["contentTypeSlug", "page", "limit", "status", "search", "locale", "sortOrder"] },
+  { name: "get_content_entry", category: "content", description: "Mengambil data lengkap satu entri konten spesifik berdasarkan ID uniknya.", inputs: ["id"] },
+  { name: "create_content_entry", category: "content", description: "Menambahkan entri konten baru ke sebuah Content Type dengan payload data JSON.", inputs: ["contentTypeSlug", "data", "status", "locale"] },
   { name: "update_content_entry", category: "content", description: "Memperbarui entri konten yang sudah ada berdasarkan ID-nya.", inputs: ["id", "data", "status"] },
   { name: "delete_content_entry", category: "content", description: "Menghapus satu entri konten spesifik berdasarkan ID.", inputs: ["id"] },
 
   { name: "list_single_types", category: "single", description: "Mendaftar seluruh Single Type (skema halaman tunggal seperti Homepage, Pengaturan Situs).", inputs: [] },
-  { name: "get_single_type", category: "single", description: "Mengambil skema field dan data konten tersimpan dari satu Single Type.", inputs: ["singleTypeSlug"] },
-  { name: "create_single_type", category: "single", description: "Membuat Single Type baru (skema halaman tunggal, mis. 'Homepage', 'Halaman Kontak') dengan field dan data awal opsional.", inputs: ["name", "slug", "description", "fields", "initialData"] },
-  { name: "update_single_type_content", category: "single", description: "Menyimpan/memperbarui nilai data singleton pada sebuah Single Type (mis. judul hero banner, link footer).", inputs: ["singleTypeSlug", "data", "locale"] },
+  { name: "get_single_type", category: "single", description: "Mengambil skema field dan data konten tersimpan dari satu Single Type.", inputs: ["singleTypeSlug", "locale?"] },
+  { name: "create_single_type", category: "single", description: "Membuat Single Type baru (skema halaman tunggal, mis. 'Homepage', 'Halaman Kontak') dengan field dan data awal opsional.", inputs: ["name", "slug", "description", "fields", "initialData", "locale?"] },
+  { name: "update_single_type", category: "single", description: "Memperbarui nama, deskripsi, atau menambah/mengganti skema field pada sebuah Single Type.", inputs: ["singleTypeSlug", "name", "description", "fields"] },
+  { name: "update_single_type_content", category: "single", description: "Menyimpan/memperbarui nilai data singleton pada sebuah Single Type (mis. judul hero banner, link footer).", inputs: ["singleTypeSlug", "data", "locale?"] },
   { name: "delete_single_type", category: "single", description: "Menghapus permanen sebuah Single Type, skema field, dan data kontennya.", inputs: ["singleTypeSlug"] },
 
   { name: "list_components", category: "single", description: "Mendaftar seluruh Component reusable (mis. Hero Section, Feature Card, FAQ Item) beserta skema field-nya.", inputs: [] },
+  { name: "get_component", category: "single", description: "Mengambil skema field dan metadata dari satu Component berdasarkan slug atau ID.", inputs: ["componentSlug"] },
   { name: "create_component", category: "single", description: "Membuat skema Component baru yang bisa dipakai berulang di dalam Content Type dan Single Type.", inputs: ["name", "slug", "category", "description", "fields"] },
+  { name: "update_component", category: "single", description: "Memperbarui nama, kategori, deskripsi, atau menambah/mengganti skema field pada sebuah Component.", inputs: ["componentSlug", "name", "category", "description", "fields"] },
   { name: "delete_component", category: "single", description: "Menghapus permanen sebuah Component dan skema field-nya.", inputs: ["componentSlug"] },
 
   { name: "list_webhooks", category: "webhook", description: "Mendaftar seluruh webhook yang dikonfigurasi, event yang di-subscribe, URL, dan statusnya.", inputs: [] },
+  { name: "get_webhook", category: "webhook", description: "Mengambil detail konfigurasi satu webhook spesifik berdasarkan ID-nya.", inputs: ["id"] },
   { name: "create_webhook", category: "webhook", description: "Mendaftarkan endpoint webhook baru untuk menerima notifikasi event CMS (mis. 'content.created', 'content.published').", inputs: ["name", "url", "events", "secret", "enabled"] },
   { name: "update_webhook", category: "webhook", description: "Memperbarui konfigurasi webhook yang ada (nama, URL, event yang di-subscribe, status aktif).", inputs: ["id", "name", "url", "events", "enabled"] },
   { name: "delete_webhook", category: "webhook", description: "Menghapus permanen sebuah konfigurasi webhook beserta riwayat log-nya.", inputs: ["id"] },
@@ -920,7 +925,7 @@ export function MCPDashboardClient({
             <TabsList className="bg-muted/40 border border-border/80 p-1 rounded-2xl grid grid-cols-3 max-w-lg h-auto gap-1">
               <TabsTrigger value="catalog" className="rounded-xl font-bold text-xs py-2 text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-xs">
                 <Layers className="h-3.5 w-3.5 mr-1.5" />
-                36 Tools Live
+                {MCP_TOOLS_CATALOG.length} Tools Live
               </TabsTrigger>
               <TabsTrigger value="recipes" className="rounded-xl font-bold text-xs py-2 text-muted-foreground hover:text-foreground data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-xs">
                 <Sparkles className="h-3.5 w-3.5 mr-1.5" />

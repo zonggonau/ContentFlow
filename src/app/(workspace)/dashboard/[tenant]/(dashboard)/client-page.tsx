@@ -195,7 +195,7 @@ export default function TenantDashboardClient({
               </Link>
             </Button>
             <Button variant="outline" asChild className="h-9 px-3.5 text-xs font-bold rounded-xl border-border/80 bg-card hover:bg-muted/60 cursor-pointer">
-              <Link href={`/dashboard/${tenantId}/developer/api`}>
+              <Link href={`/dashboard/${tenantId}/developer/docs`}>
                 <Zap className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
                 API Docs
               </Link>
@@ -268,7 +268,7 @@ export default function TenantDashboardClient({
 
       {/* Alert Queue */}
       {stats?.entries && (stats.entries as any).in_review > 0 && (
-        <Link href={`/dashboard/${tenantId}/system/audit`}>
+        <Link href={`/dashboard/${tenantId}/cms`}>
           <div className="flex items-center gap-3 p-3.5 rounded-2xl border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15 transition-colors group">
             <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
               <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
@@ -289,8 +289,8 @@ export default function TenantDashboardClient({
         {[
           { label: "Aset Media", value: stats?.mediaCount ?? 0, icon: ImageIcon, color: "text-blue-500", bg: "bg-blue-500/10", href: `/dashboard/${tenantId}/media` },
           { label: "Anggota Tim", value: stats?.memberCount ?? 1, icon: Users, color: "text-purple-500", bg: "bg-purple-500/10", href: `/dashboard/${tenantId}/users` },
-          { label: "Webhook Aktif", value: stats?.webhookCount ?? 0, icon: Webhook, color: "text-amber-500", bg: "bg-amber-500/10", href: `/dashboard/${tenantId}/webhooks` },
-          { label: "API Token", value: stats?.apiTokenCount ?? 0, icon: Key, color: "text-emerald-500", bg: "bg-emerald-500/10", href: `/dashboard/${tenantId}/api-keys` },
+          { label: "Webhook Aktif", value: stats?.webhookCount ?? 0, icon: Webhook, color: "text-amber-500", bg: "bg-amber-500/10", href: `/dashboard/${tenantId}/developer/webhooks` },
+          { label: "API Token", value: stats?.apiTokenCount ?? 0, icon: Key, color: "text-emerald-500", bg: "bg-emerald-500/10", href: `/dashboard/${tenantId}/developer/api-keys` },
         ].map((kpi) => (
           <Link key={kpi.label} href={kpi.href}>
             <Card className="hover:border-primary/40 hover:shadow-md transition-all cursor-pointer border border-border/80 bg-card rounded-2xl shadow-xs group">
@@ -486,7 +486,7 @@ export default function TenantDashboardClient({
                   {stats.recentEntries.map((entry) => {
                     const cfg = STATUS_CONFIG[entry.status.toLowerCase()] || STATUS_CONFIG.draft
                     return (
-                      <Link key={entry.id} href={`/dashboard/${tenantId}/content/${entry.contentTypeSlug}`}>
+                      <Link key={entry.id} href={`/dashboard/${tenantId}/cms/content/${entry.contentTypeSlug}`}>
                         <div className="flex items-center justify-between p-3 px-4 hover:bg-muted/40 transition-colors">
                           <div className="min-w-0">
                             <p className="text-xs font-bold truncate text-foreground">{entry.contentType}</p>

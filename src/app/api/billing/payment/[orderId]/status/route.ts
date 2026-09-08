@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/database"
 import { getTransactionStatus } from "@/lib/midtrans"
+import { logAudit, AuditAction } from "@/lib/audit-log"
 
 export async function GET(
   request: NextRequest,
@@ -233,12 +234,28 @@ export async function GET(
           // Reflect locally
           transaction.status = "success"
           if (transaction.subscription) transaction.subscription.status = "active"
+
+          logAudit({
+            userId: session.user.id,
+            action: AuditAction.SETTINGS_UPDATED,
+            entity: "PaymentTransactionSynced",
+            entityId: transaction.id,
+            data: { orderId, newStatus: "success", plan: transaction.subscription?.plan },
+          })
         } else if (midtransStatus && (midtransStatus.transaction_status === "cancel" || midtransStatus.transaction_status === "deny" || midtransStatus.transaction_status === "expire")) {
           await db.paymentTransaction.update({
             where: { id: transaction.id },
             data: { status: "failed", rawResponse: midtransStatus as any },
           })
           transaction.status = "failed"
+
+          logAudit({
+            userId: session.user.id,
+            action: AuditAction.SETTINGS_UPDATED,
+            entity: "PaymentTransactionSynced",
+            entityId: transaction.id,
+            data: { orderId, newStatus: "failed" },
+          })
         }
       } catch (err) {
         console.error("Failed to sync with Midtrans:", err)

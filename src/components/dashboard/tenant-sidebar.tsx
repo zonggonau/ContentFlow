@@ -44,27 +44,27 @@ import { useState, useEffect, useMemo } from "react"
 import { signOut } from "next-auth/react"
 import { ProfileModal } from "@/components/dashboard/profile-modal"
 
-/** Sidebar copy — Bahasa Indonesia only (SaCMS's sole UI language). */
+/** Sidebar copy — English UI. */
 const s = {
-  groupContent: "KONTEN",
-  groupManagement: "MANAJEMEN",
-  groupSettings: "PENGATURAN",
-  overview: "Ringkasan",
-  cmsStudio: "CMS Studio Konten",
+  groupContent: "CONTENT",
+  groupManagement: "MANAGEMENT",
+  groupSettings: "SETTINGS",
+  overview: "Overview",
+  cmsStudio: "CMS Content Studio",
   contentTypeBuilder: "Content-Type Builder",
-  mediaLibrary: "Pustaka Media",
-  support: "Bantuan & IT Support",
-  teamMembers: "Anggota Tim",
-  auditLog: "Log Aktivitas",
-  subscriptions: "Paket & Langganan",
-  customDomains: "Domain Kustom",
-  infrastructure: "Infrastruktur & DB",
+  mediaLibrary: "Media Library",
+  support: "Support & Help Desk",
+  teamMembers: "Team Members",
+  auditLog: "Activity Log",
+  subscriptions: "Plans & Billing",
+  customDomains: "Custom Domains",
+  infrastructure: "Infrastructure & DB",
   developer: "Developer & API",
-  workspaceSettings: "Pengaturan Workspace",
-  switchWorkspace: "Ganti Workspace",
-  signOut: "Keluar",
-  badgeNew: "BARU",
-  badgeActivate: "AKTIFKAN",
+  workspaceSettings: "Workspace Settings",
+  switchWorkspace: "Switch Workspace",
+  signOut: "Sign Out",
+  badgeNew: "NEW",
+  badgeActivate: "ACTIVATE",
 } as const
 
 interface TenantSidebarProps {
@@ -291,7 +291,7 @@ export function TenantSidebar({ tenantId: propId, tenantSlug, tenants, isEnterpr
               <span className="text-sm font-bold truncate">{currentTenant?.name || "Workspace"}</span>
               {isExpired ? (
                 <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 shrink-0 font-bold border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
-                  <Lock className="w-2 h-2" /> Terkunci
+                  <Lock className="w-2 h-2" /> Locked
                 </Badge>
               ) : (
                 <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 capitalize shrink-0 font-bold border-primary/20 text-primary">

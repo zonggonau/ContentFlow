@@ -33,10 +33,10 @@ export async function getAccountPricingAction(planId: string) {
   }
 }
 
-export async function getTransactionHistoryAction() {
+export async function getTransactionHistoryAction(page: number = 1, limit: number = 50) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session?.user?.id) return []
+    if (!session?.user?.id) return { transactions: [], total: 0, page, totalPages: 1 }
 
     // Fetch user memberships to also get tenant subscriptions
     const memberships = await db.tenantMember.findMany({
@@ -57,41 +57,50 @@ export async function getTransactionHistoryAction() {
     
     const subIds = subscriptions.map(s => s.id)
 
-    const transactions = await db.paymentTransaction.findMany({
-      where: {
-        OR: [
-          ...(subIds.length > 0 ? [{ subscriptionId: { in: subIds } }] : []),
-          { subscription: { userId: session.user.id } },
-          ...(tenantIds.length > 0 ? [{ subscription: { tenantId: { in: tenantIds } } }] : [])
-        ]
-      },
-      include: {
-        subscription: {
-          select: {
-            plan: true,
-            status: true,
-            tenantId: true,
-            tenant: {
-              select: {
-                name: true,
-                slug: true
+    const where = {
+      OR: [
+        ...(subIds.length > 0 ? [{ subscriptionId: { in: subIds } }] : []),
+        { subscription: { userId: session.user.id } },
+        ...(tenantIds.length > 0 ? [{ subscription: { tenantId: { in: tenantIds } } }] : [])
+      ]
+    }
+
+    const skip = (page - 1) * limit
+
+    const [transactions, total] = await Promise.all([
+      db.paymentTransaction.findMany({
+        where,
+        include: {
+          subscription: {
+            select: {
+              plan: true,
+              status: true,
+              tenantId: true,
+              tenant: {
+                select: {
+                  name: true,
+                  slug: true
+                }
               }
             }
           }
-        }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 50
-    })
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      db.paymentTransaction.count({ where }),
+    ])
 
-    return transactions
+    return { transactions, total, page, totalPages: Math.ceil(total / limit) }
   } catch (error) {
     console.error("Error fetching transactions:", error)
-    return []
+    return { transactions: [], total: 0, page, totalPages: 1 }
   }
 }
 
 import { getPaymentProvider } from "@/lib/payment"
+import { logAudit, AuditAction } from "@/lib/audit-log"
 
 export async function checkTransactionStatusAction(orderId: string) {
   try {
@@ -159,6 +168,14 @@ export async function checkTransactionStatusAction(orderId: string) {
             data: { plan: transaction.subscription.plan },
           })
         }
+
+        logAudit({
+          userId: session.user.id,
+          action: AuditAction.SETTINGS_UPDATED,
+          entity: "PaymentTransactionSynced",
+          entityId: transaction.id,
+          data: { orderId, newStatus: result.status, plan: transaction.subscription.plan },
+        })
       }
     }
 

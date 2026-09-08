@@ -182,7 +182,10 @@ const handler = createMcpHandler(
           }),
           tenantDb.singleType.findMany({ 
             where: { tenantId: auth.tenantId }, 
-            include: { schemaFields: { orderBy: { order: "asc" } } } 
+            include: { 
+              schemaFields: { orderBy: { order: "asc" } },
+              tenants: { where: { tenantId: auth.tenantId }, take: 1 }
+            } 
           }),
           tenantDb.component.findMany({ 
             where: { tenantId: auth.tenantId }, 
@@ -215,6 +218,8 @@ const handler = createMcpHandler(
             name: st.name, 
             slug: st.slug, 
             description: st.description, 
+            hasData: !!st.tenants[0]?.data,
+            data: st.tenants[0]?.data || null,
             fields: mapFields(st.schemaFields) 
           })),
           components: components.map((c) => ({ 
@@ -255,7 +260,7 @@ const handler = createMcpHandler(
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
 
-        let types = FIELD_TYPES as any[]
+        let types = FIELD_TYPES as unknown as any[]
         if (category) {
           types = types.filter(t => t.category.toLowerCase() === category.toLowerCase())
         }
@@ -637,17 +642,18 @@ const handler = createMcpHandler(
       "query_content",
       {
         title: "Query Content Entries",
-        description: "Fetch published or draft content entries from a Content Type collection with pagination, search, and sorting.",
+        description: "Fetch published or draft content entries from a Content Type collection with pagination, search, locale filtering, and sorting.",
         inputSchema: {
           contentTypeSlug: z.string().describe("Slug of the Content Type (e.g. 'articles', 'products')"),
           limit: z.number().default(10).describe("Number of items to return (max 100)"),
           page: z.number().default(1).describe("Page number (1-indexed)"),
           status: z.enum(["PUBLISHED", "DRAFT", "IN_REVIEW", "ARCHIVED", "ALL"]).default("PUBLISHED"),
           search: z.string().optional().describe("Search term"),
+          locale: z.string().optional().describe("Filter by locale code (e.g. 'id', 'en')"),
           sortOrder: z.enum(["asc", "desc"]).default("desc"),
         },
       },
-      async ({ contentTypeSlug, limit, page, status, search, sortOrder }) => {
+      async ({ contentTypeSlug, limit, page, status, search, locale, sortOrder }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
 
@@ -672,6 +678,9 @@ const handler = createMcpHandler(
         if (status && status !== "ALL") {
           whereClause.status = status
         }
+        if (locale) {
+          whereClause.locale = locale
+        }
 
         const [entries, total] = await Promise.all([
           tenantDb.contentEntry.findMany({
@@ -694,10 +703,57 @@ const handler = createMcpHandler(
           data: entries.map((e) => ({
             _id: e.id,
             _status: e.status,
+            _locale: e.locale,
             _createdAt: e.createdAt,
             _publishedAt: e.publishedAt,
             ...(typeof e.data === "object" && e.data !== null ? e.data : {}),
           })),
+        }
+
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] }
+      }
+    )
+
+    // ── get_content_entry ────────────────────────────────────────────────────
+    server.registerTool(
+      "get_content_entry",
+      {
+        title: "Get Content Entry",
+        description: "Fetch a specific content entry record by its unique ID, including all JSON fields, locale, status, and metadata.",
+        inputSchema: {
+          id: z.string().describe("Unique ID of the content entry (e.g. 'cmtcsh...')"),
+        },
+      },
+      async ({ id }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+
+        const tenantDb = await getTenantDb(auth.tenantSlug)
+        const entry = await tenantDb.contentEntry.findFirst({
+          where: { id, tenantId: auth.tenantId },
+          include: {
+            contentType: {
+              select: { id: true, name: true, slug: true }
+            }
+          }
+        })
+        if (!entry) {
+          return {
+            content: [{ type: "text" as const, text: `❌ Content entry with ID '${id}' not found.` }],
+            isError: true,
+          }
+        }
+
+        const result = {
+          _id: entry.id,
+          _contentType: entry.contentType.slug,
+          _contentTypeName: entry.contentType.name,
+          _status: entry.status,
+          _locale: entry.locale,
+          _createdAt: entry.createdAt,
+          _updatedAt: entry.updatedAt,
+          _publishedAt: entry.publishedAt,
+          ...(typeof entry.data === "object" && entry.data !== null ? entry.data : {}),
         }
 
         return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] }
@@ -714,9 +770,10 @@ const handler = createMcpHandler(
           contentTypeSlug: z.string().describe("Slug of the target Content Type (e.g. 'articles')"),
           data: z.record(z.string(), z.any()).describe("JSON object containing the field values (e.g. { title: 'Hello', slug: 'hello', content: '...' })"),
           status: z.enum(["PUBLISHED", "DRAFT", "IN_REVIEW"]).default("PUBLISHED").describe("Initial entry status"),
+          locale: z.string().default("id").describe("Content locale (default 'id')"),
         },
       },
-      async ({ contentTypeSlug, data, status }) => {
+      async ({ contentTypeSlug, data, status, locale }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
 
@@ -737,6 +794,7 @@ const handler = createMcpHandler(
             tenantId: auth.tenantId,
             data: data || {},
             status: status || "PUBLISHED",
+            locale: locale || "id",
             publishedAt: status === "PUBLISHED" ? new Date() : null,
           }
         })
@@ -876,14 +934,16 @@ const handler = createMcpHandler(
         title: "Get Single Type Content & Schema",
         description: "Fetch the schema fields and actual saved content data for a specific Single Type.",
         inputSchema: {
-          singleTypeSlug: z.string().describe("Slug of the Single Type (e.g. 'homepage', 'global-settings', 'about')"),
+          singleTypeSlug: z.string().describe("Slug or ID of the Single Type (e.g. 'homepage', 'global-settings', 'about')"),
+          locale: z.string().optional().default("id").describe("Content locale (default 'id')"),
         },
       },
-      async ({ singleTypeSlug }) => {
+      async ({ singleTypeSlug, locale }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
+        const targetLocale = locale || "id"
         const st = await tenantDb.singleType.findFirst({
           where: {
             OR: [
@@ -893,10 +953,12 @@ const handler = createMcpHandler(
           },
           include: { 
             schemaFields: { orderBy: { order: "asc" } },
-            tenants: { where: { tenantId: auth.tenantId }, take: 1 }
+            tenants: { where: { tenantId: auth.tenantId } }
           },
         })
-        if (!st) return { content: [{ type: "text" as const, text: `❌ Single Type '${singleTypeSlug}' not found.` }] }
+        if (!st) return { content: [{ type: "text" as const, text: `❌ Single Type '${singleTypeSlug}' not found.` }], isError: true }
+
+        const matchingAssignment = st.tenants.find(t => t.locale === targetLocale) || st.tenants[0]
 
         const result = {
           singleType: {
@@ -912,7 +974,8 @@ const handler = createMcpHandler(
               options: f.options
             })),
           },
-          data: st.tenants[0]?.data || {}
+          locale: matchingAssignment?.locale || targetLocale,
+          data: matchingAssignment?.data || {}
         }
 
         return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] }
@@ -939,9 +1002,10 @@ const handler = createMcpHandler(
             })
           ).optional().describe("Field definitions"),
           initialData: z.record(z.string(), z.any()).optional().describe("Initial singleton content values"),
+          locale: z.string().default("id").describe("Initial content locale (default 'id')"),
         },
       },
-      async ({ name, slug, description, fields, initialData }) => {
+      async ({ name, slug, description, fields, initialData, locale }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
 
@@ -953,6 +1017,7 @@ const handler = createMcpHandler(
         })
         if (existing) return { content: [{ type: "text" as const, text: `❌ Single Type '${cleanSlug}' already exists.` }] }
 
+        const initialLocale = locale || "id"
         const created = await tenantDb.singleType.create({
           data: {
             tenantId: auth.tenantId,
@@ -973,7 +1038,7 @@ const handler = createMcpHandler(
             tenants: {
               create: {
                 tenantId: auth.tenantId,
-                locale: "id",
+                locale: initialLocale,
                 data: initialData || {},
                 publishedAt: new Date()
               }
@@ -1003,7 +1068,7 @@ const handler = createMcpHandler(
         inputSchema: {
           singleTypeSlug: z.string().describe("Slug of the Single Type (e.g. 'homepage')"),
           data: z.record(z.string(), z.any()).describe("JSON object of content values"),
-          locale: z.string().default("en").describe("Content locale (default 'en')"),
+          locale: z.string().default("id").describe("Content locale (default 'id')"),
         },
       },
       async ({ singleTypeSlug, data, locale }) => {
@@ -1011,6 +1076,7 @@ const handler = createMcpHandler(
         if (!auth) return UNAUTHORIZED
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
+        const targetLocale = locale || "id"
         const st = await tenantDb.singleType.findFirst({
           where: {
             OR: [
@@ -1026,7 +1092,7 @@ const handler = createMcpHandler(
             tenantId_singleTypeId_locale: {
               tenantId: auth.tenantId,
               singleTypeId: st.id,
-              locale: locale || "en"
+              locale: targetLocale
             }
           },
           update: {
@@ -1036,7 +1102,7 @@ const handler = createMcpHandler(
           create: {
             tenantId: auth.tenantId,
             singleTypeId: st.id,
-            locale: locale || "en",
+            locale: targetLocale,
             data: data || {},
             publishedAt: new Date(),
           }
@@ -1045,7 +1111,82 @@ const handler = createMcpHandler(
         return {
           content: [{
             type: "text" as const,
-            text: `✅ Single Type '${st.slug}' content saved successfully.\n\n${JSON.stringify(assignment, null, 2)}`
+            text: `✅ Single Type '${st.slug}' (${targetLocale}) content saved successfully.\n\n${JSON.stringify(assignment, null, 2)}`
+          }]
+        }
+      }
+    )
+
+    // ── update_single_type ───────────────────────────────────────────────────
+    server.registerTool(
+      "update_single_type",
+      {
+        title: "Update Single Type Schema",
+        description: "Update an existing Single Type's name, description, or add/replace its schema fields.",
+        inputSchema: {
+          singleTypeSlug: z.string().describe("Slug or ID of the Single Type to update"),
+          name: z.string().optional().describe("New display name"),
+          description: z.string().optional().describe("New description"),
+          fields: z.array(
+            z.object({
+              name: z.string(),
+              slug: z.string(),
+              type: z.string(),
+              required: z.boolean().optional().default(false),
+              options: z.record(z.string(), z.any()).optional(),
+            })
+          ).optional().describe("New list of fields. If provided, replaces the schema field set."),
+        },
+      },
+      async ({ singleTypeSlug, name, description, fields }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+
+        const tenantDb = await getTenantDb(auth.tenantSlug)
+        const st = await tenantDb.singleType.findFirst({
+          where: {
+            OR: [
+              { slug: singleTypeSlug, tenantId: auth.tenantId },
+              { id: singleTypeSlug, tenantId: auth.tenantId },
+            ]
+          }
+        })
+        if (!st) return { content: [{ type: "text" as const, text: `❌ Single Type '${singleTypeSlug}' not found.` }] }
+
+        // Update fields if provided
+        if (fields && fields.length > 0) {
+          await tenantDb.schemaField.deleteMany({
+            where: { singleTypeId: st.id }
+          })
+          await tenantDb.schemaField.createMany({
+            data: fields.map((f, idx) => ({
+              singleTypeId: st.id,
+              name: f.name,
+              slug: f.slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "_"),
+              type: f.type,
+              required: f.required || false,
+              options: f.options || {},
+              order: idx,
+            }))
+          })
+        }
+
+        const updated = await tenantDb.singleType.update({
+          where: { id: st.id },
+          data: {
+            ...(name ? { name: name.trim() } : {}),
+            ...(description !== undefined ? { description } : {}),
+          },
+          include: {
+            schemaFields: { orderBy: { order: "asc" } },
+            tenants: { where: { tenantId: auth.tenantId }, take: 1 },
+          }
+        })
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `✅ Single Type '${updated.name}' updated successfully.\n\n${JSON.stringify(updated, null, 2)}`
           }]
         }
       }
@@ -1200,6 +1341,128 @@ const handler = createMcpHandler(
       }
     )
 
+    // ── get_component ────────────────────────────────────────────────────────
+    server.registerTool(
+      "get_component",
+      {
+        title: "Get Component",
+        description: "Fetch schema fields and metadata for a specific Component.",
+        inputSchema: {
+          componentSlug: z.string().describe("Slug or ID of the Component (e.g. 'hero-banner', 'cta-box')"),
+        },
+      },
+      async ({ componentSlug }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+
+        const tenantDb = await getTenantDb(auth.tenantSlug)
+        const c = await tenantDb.component.findFirst({
+          where: {
+            OR: [
+              { slug: componentSlug, tenantId: auth.tenantId },
+              { id: componentSlug, tenantId: auth.tenantId },
+            ]
+          },
+          include: { schemaFields: { orderBy: { order: "asc" } } },
+        })
+        if (!c) return { content: [{ type: "text" as const, text: `❌ Component '${componentSlug}' not found.` }] }
+
+        const result = {
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+          category: c.category,
+          description: c.description,
+          fields: c.schemaFields.map(f => ({
+            id: f.id,
+            name: f.name,
+            slug: f.slug,
+            type: f.type,
+            required: f.required,
+            options: f.options
+          }))
+        }
+
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] }
+      }
+    )
+
+    // ── update_component ─────────────────────────────────────────────────────
+    server.registerTool(
+      "update_component",
+      {
+        title: "Update Component",
+        description: "Update an existing Component's name, category, description, or add/replace its schema fields.",
+        inputSchema: {
+          componentSlug: z.string().describe("Current slug or ID of the Component to update"),
+          name: z.string().optional().describe("New display name"),
+          category: z.string().optional().describe("New category (e.g. 'sections', 'elements', 'meta')"),
+          description: z.string().optional().describe("New description"),
+          fields: z.array(
+            z.object({
+              name: z.string(),
+              slug: z.string(),
+              type: z.string(),
+              required: z.boolean().optional().default(false),
+              options: z.record(z.string(), z.any()).optional(),
+            })
+          ).optional().describe("New list of fields. If provided, replaces the component's field set."),
+        },
+      },
+      async ({ componentSlug, name, category, description, fields }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+
+        const tenantDb = await getTenantDb(auth.tenantSlug)
+        const c = await tenantDb.component.findFirst({
+          where: {
+            OR: [
+              { slug: componentSlug, tenantId: auth.tenantId },
+              { id: componentSlug, tenantId: auth.tenantId },
+            ]
+          }
+        })
+        if (!c) return { content: [{ type: "text" as const, text: `❌ Component '${componentSlug}' not found.` }] }
+
+        // Update fields if provided
+        if (fields && fields.length > 0) {
+          await tenantDb.schemaField.deleteMany({
+            where: { componentId: c.id }
+          })
+          await tenantDb.schemaField.createMany({
+            data: fields.map((f, idx) => ({
+              componentId: c.id,
+              name: f.name,
+              slug: f.slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "_"),
+              type: f.type,
+              required: f.required || false,
+              options: f.options || {},
+              order: idx,
+            }))
+          })
+        }
+
+        const updated = await tenantDb.component.update({
+          where: { id: c.id },
+          data: {
+            ...(name ? { name: name.trim() } : {}),
+            ...(category ? { category: category.trim() } : {}),
+            ...(description !== undefined ? { description } : {}),
+          },
+          include: {
+            schemaFields: { orderBy: { order: "asc" } }
+          }
+        })
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `✅ Component '${updated.name}' updated successfully.\n\n${JSON.stringify(updated, null, 2)}`
+          }]
+        }
+      }
+    )
+
     // ── delete_component ─────────────────────────────────────────────────────
     server.registerTool(
       "delete_component",
@@ -1270,6 +1533,39 @@ const handler = createMcpHandler(
         }))
 
         return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] }
+      }
+    )
+
+    // ── get_webhook ──────────────────────────────────────────────────────────
+    server.registerTool(
+      "get_webhook",
+      {
+        title: "Get Webhook",
+        description: "Fetch details, subscribed events, endpoint URL, and status of a specific webhook by ID.",
+        inputSchema: {
+          id: z.string().describe("ID of the webhook to retrieve"),
+        },
+      },
+      async ({ id }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+
+        const webhook = await db.webhook.findFirst({
+          where: { id, tenantId: auth.tenantId },
+        })
+        if (!webhook) {
+          return {
+            content: [{ type: "text" as const, text: `❌ Webhook '${id}' not found.` }],
+            isError: true,
+          }
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify(webhook, null, 2)
+          }]
+        }
       }
     )
 
@@ -1593,7 +1889,7 @@ export default async function NewsPage() {
             name: z.string().describe("File path (e.g. 'app/page.tsx', 'index.html', 'styles.css')"),
             content: z.string().describe("Raw source code content of the file")
           })).describe("Array of files to deploy"),
-          envVars: z.record(z.string()).optional().describe("Optional environment variables for the deployment")
+          envVars: z.record(z.string(), z.string()).optional().describe("Optional environment variables for the deployment")
         },
       },
       async ({ projectName, files, envVars }) => {
@@ -1611,7 +1907,7 @@ export default async function NewsPage() {
         }
 
         try {
-          const result = await deployToVercel(projectName, files, envVars)
+          const result = await deployToVercel(projectName, files, envVars as Record<string, string> | undefined)
           return {
             content: [{
               type: "text" as const,

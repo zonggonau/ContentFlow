@@ -28,7 +28,7 @@ export default async function GraphQLPlaygroundPage({
       <div className="border-b border-border bg-card px-4 py-2 text-xs text-muted-foreground">
         Set <code>Authorization: Bearer &lt;YOUR_API_TOKEN&gt;</code> in Sandbox headers.
         The stored token hash is never auto-injected.{" "}
-        <Link className="font-semibold text-orange-600 hover:underline" href={`/dashboard/${access.tenant.slug}/api-keys`}>
+        <Link className="font-semibold text-orange-600 hover:underline" href={`/dashboard/${access.tenant.slug}/developer/api-keys`}>
           Manage API tokens
         </Link>
       </div>

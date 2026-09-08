@@ -63,28 +63,7 @@ For Single Types, provide 1 complete initial record in 'dummyData'.
 
 All slugs must be snake_case or kebab-case lowercase.`
 
-async function generateWithOpenAI(prompt: string): Promise<GeneratedSystemSchema> {
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  
-  const completion = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: prompt }
-    ],
-    response_format: { type: "json_object" },
-    max_tokens: 8000,
-    temperature: 0.4
-  })
-  
-  const text = completion.choices[0]?.message?.content
-  if (!text) throw new Error("OpenAI returned no content")
-  
-  const parsed = JSON.parse(text)
-  return systemSchema.parse(parsed)
-}
-
-async function generateWithDeepSeek(prompt: string, tenantId?: string, userId?: string): Promise<GeneratedSystemSchema> {
+async function generateWithAi(prompt: string, tenantId?: string, userId?: string): Promise<GeneratedSystemSchema> {
   const { safeGenerateContent } = await import("./ai")
   const result = await safeGenerateContent(SYSTEM_PROMPT, prompt, { 
     responseFormat: "json_object", 
@@ -92,11 +71,17 @@ async function generateWithDeepSeek(prompt: string, tenantId?: string, userId?: 
     tenantId, 
     userId,
     creditsCost: 5,
-    action: "generate_schema", 
-    overrideModel: "deepseek-chat" 
+    action: "generate_schema"
   })
   
-  const parsed = JSON.parse(result.text)
+  let rawText = result.text.trim()
+  if (rawText.startsWith("```json")) {
+    rawText = rawText.replace(/^```json/, "").replace(/```$/, "").trim()
+  } else if (rawText.startsWith("```")) {
+    rawText = rawText.replace(/^```/, "").replace(/```$/, "").trim()
+  }
+
+  const parsed = JSON.parse(rawText)
   return systemSchema.parse(parsed)
 }
 
@@ -392,24 +377,34 @@ export function generateHeuristicSchema(prompt: string): GeneratedSystemSchema {
 }
 
 export async function generateSystemSchema(prompt: string, tenantId?: string, userId?: string): Promise<GeneratedSystemSchema> {
-  // 1. Coba AI LLM DeepSeek
+  // 1. Coba AI LLM (OpenAI / DeepSeek / Gemini via getOpenAI)
   try {
-    console.log("[AI Schema] Attempting DeepSeek-chat for dynamic schema generation...")
-    return await generateWithDeepSeek(prompt, tenantId, userId)
+    console.log("[AI Schema] Analyzing user prompt with LLM to generate custom dynamic schema...")
+    return await generateWithAi(prompt, tenantId, userId)
   } catch (error: any) {
-    console.warn("[AI Schema] DeepSeek failed:", error.message)
+    console.warn("[AI Schema] AI generation failed or not configured:", error.message)
     
-    // 2. Fallback ke OpenAI GPT-4o-mini jika key tersedia
-    if (process.env.OPENAI_API_KEY) {
-      try {
-        console.log("[AI Schema] Fallback: Using OpenAI GPT-4o-mini...")
-        return await generateWithOpenAI(prompt)
-      } catch (fallbackError: any) {
-        console.warn("[AI Schema] OpenAI failed:", fallbackError.message)
+    // 2. Intelligent Blueprint Matcher: cek apakah prompt cocok dengan koleksi blueprint kaya di DOMAIN_KNOWLEDGE_LIBRARY
+    try {
+      const { DOMAIN_KNOWLEDGE_LIBRARY } = await import("./ai/domain-knowledge-types")
+      const p = prompt.toLowerCase()
+      const matched = DOMAIN_KNOWLEDGE_LIBRARY.find(bp => {
+        const words = bp.name.toLowerCase().split(/\s+/).concat(bp.category.toLowerCase().split(/\s+/))
+        return words.some(w => w.length > 3 && p.includes(w))
+      })
+      if (matched) {
+        console.log(`[AI Schema] Matched domain knowledge blueprint: ${matched.name}`)
+        return {
+          contentTypes: matched.schema.contentTypes as any,
+          singleTypes: matched.schema.singleTypes as any,
+          components: (matched.schema.components || []) as any,
+        }
       }
+    } catch (bpErr) {
+      console.warn("[AI Schema] Blueprint matcher error:", bpErr)
     }
 
-    // 3. Fallback Heuristic Generator Terstruktur (Mendukung 30 Field Types & Multi-Collection)
+    // 3. Fallback Heuristic Generator Terstruktur
     console.log("[AI Schema] Using High-Accuracy Multi-Collection Domain Synthesizer...")
     return generateHeuristicSchema(prompt)
   }

@@ -186,7 +186,10 @@ export default async function BillingPage() {
     console.error("Failed to fetch transactions:", err)
   }
 
-  // 4. Fetch User's Master Infrastructure Settings
+  // 4. Fetch User's Master Infrastructure Settings — masked. Real secrets
+  // (DB connection string, S3 secret key) never leave the server as a page
+  // prop; the client fetches a masked view then reveals one field on demand
+  // via GET /api/auth/user/infrastructure.
   let masterInfra = { databaseUrl: "", storageConfig: null as any }
   try {
     const user = await db.user.findUnique({
@@ -194,8 +197,14 @@ export default async function BillingPage() {
       select: { masterDatabaseUrl: true, masterStorageConfig: true }
     })
     if (user) {
-      masterInfra.databaseUrl = user.masterDatabaseUrl || ""
-      masterInfra.storageConfig = user.masterStorageConfig
+      const storageConfig = (user.masterStorageConfig as any) || {}
+      masterInfra.databaseUrl = user.masterDatabaseUrl ? "••••••••" : ""
+      masterInfra.storageConfig = {
+        bucket: storageConfig.bucket || "",
+        region: storageConfig.region || "",
+        accessKeyId: storageConfig.accessKeyId ? "••••••••" : "",
+        secretAccessKey: storageConfig.secretAccessKey ? "••••••••" : "",
+      }
     }
   } catch (err) {
     console.error("Failed to fetch master infra:", err)

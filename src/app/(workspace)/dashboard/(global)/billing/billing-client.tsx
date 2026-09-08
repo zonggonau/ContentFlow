@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { 
   Loader2, Zap, CreditCard, CheckCircle2, ShieldCheck, Crown, Receipt, Clock, RefreshCw, Database, Download, Cloud, Save, Sparkles,
-  Eye, Search, XCircle, Calendar, ArrowUpRight, FileText, Check, Copy
+  Eye, EyeOff, Search, XCircle, Calendar, ArrowUpRight, FileText, Check, Copy
 } from "lucide-react"
 import { getTransactionHistoryAction, checkTransactionStatusAction } from "@/actions/billing"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -133,6 +133,27 @@ export default function BillingClient({
     s3SecretKey: initialMasterInfra?.storageConfig?.secretAccessKey || "",
   })
   const [savingInfra, setSavingInfra] = useState(false)
+  const [infraShowMasks, setInfraShowMasks] = useState<Record<string, boolean>>({})
+
+  // infra.databaseUrl/s3AccessKey/s3SecretKey arrive masked ("••••••••") from
+  // the server component. Revealing one fetches the real value on demand
+  // (audited server-side) so plaintext secrets never sit in the page's
+  // initial payload.
+  const revealInfraSecret = async (maskField: string, infraKey: "databaseUrl" | "s3AccessKey" | "s3SecretKey", apiField: string) => {
+    if (infraShowMasks[maskField]) {
+      setInfraShowMasks(prev => ({ ...prev, [maskField]: false }))
+      return
+    }
+    try {
+      const res = await fetch(`/api/auth/user/infrastructure?reveal=${apiField}`)
+      if (!res.ok) throw new Error("reveal failed")
+      const data = await res.json()
+      setInfra(prev => ({ ...prev, [infraKey]: data.value ?? "" }))
+      setInfraShowMasks(prev => ({ ...prev, [maskField]: true }))
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal mengambil nilai rahasia" })
+    }
+  }
 
   const handleCheckStatus = async (orderId: string) => {
     setCheckingOrderId(orderId)
@@ -186,7 +207,7 @@ export default function BillingClient({
   const handleSaveInfra = async () => {
     setSavingInfra(true)
     try {
-      const res = await fetch("/api/admin/infra", {
+      const res = await fetch("/api/auth/user/infrastructure", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(infra)
@@ -220,7 +241,7 @@ export default function BillingClient({
       </div>
 
       <Tabs defaultValue="plans" className="w-full">
-        <TabsList className={cn("grid w-full p-1 bg-muted/40 border border-border/80 rounded-2xl h-auto gap-1", isEnterpriseMode ? "grid-cols-2 max-w-[400px]" : "grid-cols-2 max-w-[400px]")}>
+        <TabsList className="grid w-full grid-cols-2 max-w-[400px] p-1 bg-muted/40 border border-border/80 rounded-2xl h-auto gap-1">
           <TabsTrigger value="plans" className="rounded-xl font-bold text-xs py-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-xs text-muted-foreground hover:text-foreground">
             Subscription Plans
           </TabsTrigger>
@@ -863,13 +884,19 @@ export default function BillingClient({
                 </CardHeader>
                 <CardContent className="space-y-4 pt-6">
                   <div className="space-y-2">
-                    <Label htmlFor="masterDatabaseUrl">PostgreSQL Connection URL</Label>
-                    <Input 
-                      id="masterDatabaseUrl" 
-                      value={infra.databaseUrl} 
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="masterDatabaseUrl">PostgreSQL Connection URL</Label>
+                      <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealInfraSecret('databaseUrl', 'databaseUrl', 'databaseUrl')}>
+                        {infraShowMasks.databaseUrl ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                        {infraShowMasks.databaseUrl ? "Sembunyikan" : "Tampilkan"}
+                      </Button>
+                    </div>
+                    <Input
+                      id="masterDatabaseUrl"
+                      value={infra.databaseUrl}
                       onChange={(e) => setInfra({ ...infra, databaseUrl: e.target.value })}
                       placeholder="postgresql://user:password@host:port/database"
-                      type="password"
+                      type={infraShowMasks.databaseUrl ? "text" : "password"}
                     />
                   </div>
                 </CardContent>
@@ -903,22 +930,34 @@ export default function BillingClient({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="masterS3AccessKey">Access Key ID</Label>
-                      <Input 
-                        id="masterS3AccessKey" 
-                        value={infra.s3AccessKey} 
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="masterS3AccessKey">Access Key ID</Label>
+                        <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealInfraSecret('s3AccessKey', 's3AccessKey', 's3AccessKey')}>
+                          {infraShowMasks.s3AccessKey ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                          {infraShowMasks.s3AccessKey ? "Sembunyikan" : "Tampilkan"}
+                        </Button>
+                      </div>
+                      <Input
+                        id="masterS3AccessKey"
+                        value={infra.s3AccessKey}
                         onChange={(e) => setInfra({ ...infra, s3AccessKey: e.target.value })}
-                        type="password"
+                        type={infraShowMasks.s3AccessKey ? "text" : "password"}
                         placeholder="Enter access key"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="masterS3SecretKey">Secret Access Key</Label>
-                      <Input 
-                        id="masterS3SecretKey" 
-                        value={infra.s3SecretKey} 
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="masterS3SecretKey">Secret Access Key</Label>
+                        <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => revealInfraSecret('s3SecretKey', 's3SecretKey', 's3SecretKey')}>
+                          {infraShowMasks.s3SecretKey ? <EyeOff className="h-3 w-3 mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                          {infraShowMasks.s3SecretKey ? "Sembunyikan" : "Tampilkan"}
+                        </Button>
+                      </div>
+                      <Input
+                        id="masterS3SecretKey"
+                        value={infra.s3SecretKey}
                         onChange={(e) => setInfra({ ...infra, s3SecretKey: e.target.value })}
-                        type="password"
+                        type={infraShowMasks.s3SecretKey ? "text" : "password"}
                         placeholder="Enter secret key"
                       />
                     </div>

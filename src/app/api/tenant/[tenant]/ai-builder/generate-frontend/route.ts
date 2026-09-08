@@ -38,30 +38,36 @@ export const POST = withStaffAuth(
     const tenant = access.tenant
     const bridge = new McpClientBridge(tenant.id, tenant.slug, session.user.id)
 
-    // ── PHASE 1: AI Schema Architect via SaCMS MCP Bridge ─────────────────────────
-    // Always synthesize and apply Content Types, Single Types, and Components
-    // tailored to the user's prompt and domain.
+    // ── PHASE 1: Inspect Current Schema via SaCMS MCP Bridge ─────────────────────
+    // Periksa apakah workspace sudah memiliki skema custom yang relevan.
+    let activeSchema = await bridge.getFullSchema()
+    
+    // Cek apakah workspace belum memiliki skema kustom, atau hanya memiliki template default kosong (services/articles)
+    const existingContentTypes = activeSchema.contentTypes || []
+    const isOnlyDefaultBoilerplate = existingContentTypes.length > 0 && existingContentTypes.every(ct => 
+      ct.slug === "services" || ct.slug === "articles"
+    )
+    const needsNewSchema = existingContentTypes.length === 0 || isOnlyDefaultBoilerplate
+
     try {
       if (plannedSchema && (plannedSchema.contentTypes?.length || plannedSchema.singleTypes?.length)) {
-        // User confirmed a planned schema
         await bridge.applyGeneratedSchema(plannedSchema)
-      } else {
-        // Auto-generate domain schema based on the prompt
+        activeSchema = await bridge.getFullSchema()
+      } else if (needsNewSchema) {
+        // Jika belum ada skema atau hanya ada boilerplate default, langsung buatkan skema baru yang sesuai prompt via MCP
+        console.log(`[AI Builder MCP] Generating new custom schema for prompt: "${prompt.slice(0, 80)}..."`)
         const { generateSystemSchema } = await import("@/lib/ai-schema-generator")
         const generatedSchema = await generateSystemSchema(prompt, tenant.id, session.user.id)
         if (generatedSchema && (generatedSchema.contentTypes?.length || generatedSchema.singleTypes?.length)) {
           await bridge.applyGeneratedSchema(generatedSchema)
+          activeSchema = await bridge.getFullSchema()
         }
       }
     } catch (schemaErr: any) {
       console.warn("[AI_BUILDER_MCP_SCHEMA_WARNING]: Could not auto-apply schema via MCP:", schemaErr.message)
     }
 
-    // Inspect the freshly updated workspace schema & capabilities via MCP
-    const [activeSchema, capabilities] = await Promise.all([
-      bridge.getFullSchema(),
-      bridge.inspectApiCapabilities(),
-    ])
+    const capabilities = await bridge.inspectApiCapabilities()
     const tenantDb = await getTenantDb(tenant.id)
 
     // 2. Fetch existing sample records from database (if available)

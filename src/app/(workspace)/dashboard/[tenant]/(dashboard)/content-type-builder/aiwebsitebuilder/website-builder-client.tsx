@@ -162,12 +162,6 @@ export function WebsiteBuilderClient({
   // the underlying selectedModel state and AI_MODELS list are unchanged.
   const [isModelPickerOpen, setIsModelPickerOpen] = useState(false)
 
-  // Generation Mode: 'instant' | 'safe'
-  const [generationMode, setGenerationMode] = useState<"instant" | "safe">("safe")
-  const [schemaPlan, setSchemaPlan] = useState<any | null>(null)
-  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false)
-  const [isPlanning, setIsPlanning] = useState(false)
-
   // Loading state & step
   const [loading, setLoading] = useState(false)
   const [loadingStep, setLoadingStep] = useState<string>("")
@@ -366,42 +360,9 @@ export async function fetchContent(collection: string) {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Plan Schema (Two-Stage Safe Mode Handler)
+  // Unified Generate Website Handler (Direct AI MCP Execution)
   // ────────────────────────────────────────────────────────────────────────────
-  const handlePlanSchema = async (customPrompt?: string, templateId?: string) => {
-    const prompt = (customPrompt || mainPrompt).trim()
-    if (!prompt && !templateId) return
-
-    setIsPlanning(true)
-    try {
-      const res = await fetch(`/api/tenant/${tenantSlug}/ai-builder/plan-schema`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, templateId })
-      })
-
-      const data = await res.json()
-      if (res.ok && data.plan) {
-        setSchemaPlan(data.plan)
-        setIsPlanModalOpen(true)
-      } else {
-        throw new Error(data?.error || "Gagal merencanakan skema.")
-      }
-    } catch (err: any) {
-      toast({
-        title: "Gagal Merencanakan Skema",
-        description: err.message,
-        variant: "destructive"
-      })
-    } finally {
-      setIsPlanning(false)
-    }
-  }
-
-  // ────────────────────────────────────────────────────────────────────────────
-  // Unified Generate Website Handler
-  // ────────────────────────────────────────────────────────────────────────────
-  const handleGenerateWebsite = async (promptToUse?: string, schemaToUse?: any) => {
+  const handleGenerateWebsite = async (promptToUse?: string) => {
     const prompt = (promptToUse || mainPrompt).trim()
     if (!prompt) return
 
@@ -416,10 +377,8 @@ export async function fetchContent(collection: string) {
       return
     }
 
-    // Close plan modal if open
-    setIsPlanModalOpen(false)
     setLoading(true)
-    setLoadingStep("Fase 1/2: Menganalisa & membuat Content Types via SaCMS MCP...")
+    setLoadingStep("Menganalisa prompt & membangun skema CMS dinamis via SaCMS MCP...")
 
     try {
       const res = await fetch(`/api/tenant/${tenantSlug}/ai-builder/generate-frontend`, {
@@ -429,7 +388,6 @@ export async function fetchContent(collection: string) {
           prompt,
           model: selectedModel,
           apiBaseUrl: typeof window !== "undefined" ? window.location.origin : "http://localhost:3000",
-          plannedSchema: schemaToUse || schemaPlan || null,
         })
       })
 
@@ -1526,8 +1484,7 @@ export async function fetchContent(collection: string) {
                 onKeyDown={e => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault()
-                    if (generationMode === "safe") handlePlanSchema(mainPrompt)
-                    else handleGenerateWebsite()
+                    handleGenerateWebsite()
                   }
                 }}
               />
@@ -1597,26 +1554,14 @@ export async function fetchContent(collection: string) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setGenerationMode(generationMode === "safe" ? "instant" : "safe")}
-                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground cursor-pointer"
-                    title="Mode Aman: tinjau skema database sebelum membangun. Mode Instan: langsung bangun."
-                  >
-                    <span>{generationMode === "safe" ? "Mode Aman" : "Mode Instan"}</span>
-                    <ChevronDown className="h-3 w-3" />
-                  </button>
                   <Button
                     size="icon"
-                    onClick={() => {
-                      if (generationMode === "safe") handlePlanSchema(mainPrompt)
-                      else handleGenerateWebsite()
-                    }}
-                    disabled={loading || isPlanning || !mainPrompt.trim() || (!isUnlimited && creditsRemaining < currentModelConfig.credits)}
+                    onClick={() => handleGenerateWebsite()}
+                    disabled={loading || !mainPrompt.trim() || (!isUnlimited && creditsRemaining < currentModelConfig.credits)}
                     className="h-8 w-8 rounded-full bg-foreground text-background hover:bg-foreground/90 shadow-none disabled:opacity-40"
-                    title={generationMode === "safe" ? `Tinjau Skema & Bangun (-${currentModelConfig.credits} Credits)` : `Bangun Instan (-${currentModelConfig.credits} Credits)`}
+                    title={`Bangun Website via SaCMS MCP (-${currentModelConfig.credits} Credits)`}
                   >
-                    {(loading || isPlanning) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
+                    {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
               </div>
@@ -1660,96 +1605,7 @@ export async function fetchContent(collection: string) {
         </div>
       )}
 
-      {/* ── TWO-STAGE SCHEMA PLAN REVIEW MODAL ── */}
-      <Dialog open={isPlanModalOpen} onOpenChange={setIsPlanModalOpen}>
-        <DialogContent className="sm:max-w-[720px] w-[95vw] max-h-[88vh] flex flex-col rounded-2xl border border-border bg-card p-0 gap-0 overflow-hidden shadow-2xl">
-          
-          <DialogHeader className="p-6 pb-4 border-b border-border/80 shrink-0 text-left">
-            <div className="flex items-center gap-2 text-primary font-bold text-xs">
-              <ShieldCheck className="h-4 w-4 text-primary" />
-              <span>Verifikasi Rencana Skema Database (Safe Mode)</span>
-            </div>
-            <DialogTitle className="text-xl font-black text-foreground pt-1">
-              {schemaPlan?.title || "Perencanaan Skema AI"}
-            </DialogTitle>
-            <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
-              {schemaPlan?.summary || "Periksa struktur koleksi, relasi, dan field sebelum AI mengompilasi kode frontend ke database."}
-            </DialogDescription>
-          </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-5 max-h-[calc(88vh-160px)]">
-            {schemaPlan?.contentTypes?.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-bold text-foreground">
-                    <Layers className="h-4 w-4 text-primary" />
-                    <span>Koleksi Data (Content Types)</span>
-                  </div>
-                  <Badge variant="outline" className="text-[10px]">
-                    {schemaPlan.contentTypes.length} Koleksi
-                  </Badge>
-                </div>
-
-                <div className="space-y-3">
-                  {schemaPlan.contentTypes.map((ct: any, idx: number) => (
-                    <div key={idx} className="p-4 rounded-xl bg-muted/30 border border-border space-y-3 shadow-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-foreground">{ct.name}</span>
-                          <code className="text-[11px] font-mono bg-muted px-2 py-0.5 rounded-md text-muted-foreground border border-border/40">
-                            {ct.slug}
-                          </code>
-                        </div>
-                        <Badge variant="outline" className="text-[10px] font-semibold">
-                          {ct.fields?.length || 0} Fields
-                        </Badge>
-                      </div>
-
-                      {ct.description && (
-                        <p className="text-xs text-muted-foreground leading-relaxed">{ct.description}</p>
-                      )}
-
-                      <div className="space-y-1.5 pt-1">
-                        <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Daftar Fields:</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {ct.fields?.map((f: any, fIdx: number) => (
-                            <span key={fIdx} className="text-xs font-mono bg-background border border-border/80 px-2.5 py-1 rounded-lg text-foreground inline-flex items-center gap-1.5 shadow-2xs">
-                              <span className="font-semibold">{f.name}</span>
-                              <span className="text-[10px] text-primary font-bold">({f.type})</span>
-                              {f.required && <span className="text-[9px] text-destructive font-black" title="Wajib">*</span>}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="p-4 px-6 border-t border-border/80 bg-muted/20 shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsPlanModalOpen(false)}
-              className="h-10 text-xs rounded-xl cursor-pointer"
-            >
-              Ubah / Koreksi Prompt
-            </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => handleGenerateWebsite(schemaPlan?.frontendPrompt || mainPrompt, schemaPlan)}
-              disabled={loading}
-              className="h-10 text-xs font-bold rounded-xl gap-2 bg-primary text-primary-foreground shadow-xs cursor-pointer"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-              Setujui & Bangun Website (-{currentModelConfig.credits} Credits)
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* ── DELETE DRAFT / PROJECT CONFIRMATION DIALOG ── */}
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

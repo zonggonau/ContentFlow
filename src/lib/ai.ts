@@ -12,25 +12,39 @@ async function getOpenAI(): Promise<{ client: OpenAI; defaultModel: string }> {
   const { getResolvedAiConfig } = await import("./settings")
   const config = await getResolvedAiConfig()
 
-  if (config.provider === "openai" && config.openaiApiKey) {
+  // 1. OpenAI jika provider openai atau key openai tersedia
+  if (config.openaiApiKey) {
     return {
       client: new OpenAI({ apiKey: config.openaiApiKey }),
-      defaultModel: config.defaultModel || "gpt-4o-mini"
+      defaultModel: config.provider === "openai" ? (config.defaultModel || "gpt-4o-mini") : "gpt-4o-mini"
     }
   }
 
-  const apiKey = config.deepseekApiKey || process.env.DEEPSEEK_API_KEY
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY is not configured. Please configure in Super Admin Settings or .env")
+  // 2. DeepSeek jika key deepseek tersedia
+  const deepseekKey = config.deepseekApiKey || process.env.DEEPSEEK_API_KEY
+  if (deepseekKey) {
+    return {
+      client: new OpenAI({
+        baseURL: 'https://api.deepseek.com',
+        apiKey: deepseekKey
+      }),
+      defaultModel: config.defaultModel || "deepseek-chat"
+    }
   }
 
-  return {
-    client: new OpenAI({
-      baseURL: 'https://api.deepseek.com',
-      apiKey: apiKey
-    }),
-    defaultModel: config.defaultModel || "deepseek-chat"
+  // 3. Gemini OpenAI-compatible endpoint jika gemini key tersedia
+  const geminiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY
+  if (geminiKey) {
+    return {
+      client: new OpenAI({
+        baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        apiKey: geminiKey,
+      }),
+      defaultModel: "gemini-1.5-flash"
+    }
   }
+
+  throw new Error("Tidak ada API Key AI (OpenAI, DeepSeek, atau Gemini) yang terkonfigurasi di Platform Settings atau .env.")
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))

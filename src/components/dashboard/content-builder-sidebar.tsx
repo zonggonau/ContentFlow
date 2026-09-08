@@ -25,9 +25,9 @@ export function ContentBuilderSidebar({ tenantId }: ContentBuilderSidebarProps) 
 
   const navItems = [
     { title: "AI Website Builder", href: `/dashboard/${tenantId}/content-type-builder/aiwebsitebuilder`, icon: Bot, badge: "AI" },
-    { title: "Tipe Koleksi", href: `/dashboard/${tenantId}/content-type-builder/content-types`, icon: DatabaseIcon },
-    { title: "Tipe Tunggal", href: `/dashboard/${tenantId}/content-type-builder/single-types`, icon: FileText },
-    { title: "Komponen Skema", href: `/dashboard/${tenantId}/content-type-builder/components`, icon: Puzzle },
+    { title: "Collection Types", href: `/dashboard/${tenantId}/content-type-builder/content-types`, icon: DatabaseIcon },
+    { title: "Single Types", href: `/dashboard/${tenantId}/content-type-builder/single-types`, icon: FileText },
+    { title: "Components", href: `/dashboard/${tenantId}/content-type-builder/components`, icon: Puzzle },
   ]
 
   return (
@@ -35,12 +35,13 @@ export function ContentBuilderSidebar({ tenantId }: ContentBuilderSidebarProps) 
       <div>
         <NestedSidebarHeader 
           tenantId={tenantId} 
+          backTooltip="Back to Workspace Dashboard"
           logoHref={`/dashboard/${tenantId}/content-type-builder/content-types`} 
-          portalBadge="Builder Skema" 
+          portalBadge="Schema Builder" 
         />
         <div className="p-3 space-y-1">
           <p className="px-3 mb-2 text-[10px] font-black tracking-widest text-muted-foreground/60 uppercase">
-            Skema & Arsitektur
+            Schema & Architecture
           </p>
           {navItems.map((item) => {
             const isActive = pathname?.startsWith(item.href)
@@ -75,17 +76,17 @@ export function ContentBuilderSidebar({ tenantId }: ContentBuilderSidebarProps) 
       {/* Direct Quick Jump to CMS Studio */}
       <div className="p-3 border-t border-border/80 bg-muted/20 space-y-2">
         <p className="px-1 text-[10px] font-black tracking-widest text-muted-foreground/60 uppercase">
-          Navigasi Cepat
+          Quick Navigation
         </p>
         <Link href={`/dashboard/${tenantId}/cms`}>
           <div className="flex items-center gap-2.5 rounded-xl p-2.5 text-xs font-bold transition-all bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/30 group shadow-xs">
             <Sparkles className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 group-hover:rotate-12 transition-transform" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between">
-                <span className="font-bold">Buka CMS Studio</span>
+                <span className="font-bold">Open CMS Studio</span>
                 <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform text-emerald-600 dark:text-emerald-400" />
               </div>
-              <p className="text-[10px] text-muted-foreground font-normal truncate mt-0.5">Kelola data entri & konten</p>
+              <p className="text-[10px] text-muted-foreground font-normal truncate mt-0.5">Manage entries & content</p>
             </div>
           </div>
         </Link>
