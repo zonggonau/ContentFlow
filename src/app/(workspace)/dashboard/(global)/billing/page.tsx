@@ -4,6 +4,7 @@ import { redirect } from "next/navigation"
 import BillingClient from "./billing-client"
 import { getTransactionHistoryAction } from "@/actions/billing"
 import { db } from "@/lib/database"
+import { cleanPrice, formatRupiah } from "@/lib/plan-pricing"
 
 export default async function BillingPage() {
   const session = await getServerSession(authOptions)
@@ -26,36 +27,13 @@ export default async function BillingPage() {
     if (entries.length > 0) {
       accountPlans = entries.map(t => {
         const d = (typeof t.data === 'string' ? JSON.parse(t.data) : t.data) as any
-        
-        let monthlyPrice = 0
-        if (typeof d.price === 'string') {
-          monthlyPrice = parseInt(d.price.replace(/[^\d]/g, ''), 10) || 0
-        } else {
-          monthlyPrice = Number(d.price) || 0
-        }
 
-        let yearlyPrice = 0
-        if (d.yearly_price !== undefined) {
-          if (typeof d.yearly_price === 'string') {
-            yearlyPrice = parseInt(d.yearly_price.replace(/[^\d]/g, ''), 10) || 0
-          } else {
-            yearlyPrice = Number(d.yearly_price) || 0
-          }
-        } else {
-          yearlyPrice = monthlyPrice * 10
-        }
+        const monthlyPrice = cleanPrice(d.price)
+        const yearlyPrice = d.yearly_price !== undefined ? cleanPrice(d.yearly_price) : monthlyPrice * 10
+        const displayYearlyPrice = formatRupiah(yearlyPrice)
+        const displayMonthlyPrice = formatRupiah(monthlyPrice)
 
-        let displayYearlyPrice = "Rp 0"
-        if (yearlyPrice > 0) {
-          displayYearlyPrice = `Rp ${(yearlyPrice).toLocaleString('id-ID')}`
-        }
-
-        let displayMonthlyPrice = "Rp 0"
-        if (monthlyPrice > 0) {
-          displayMonthlyPrice = `Rp ${(monthlyPrice).toLocaleString('id-ID')}`
-        }
-
-        const features = Array.isArray(d.features) 
+        const features = Array.isArray(d.features)
           ? d.features 
           : (typeof d.features === 'string' ? d.features.split(',').map((s: string) => s.trim()) : [])
 
@@ -175,12 +153,14 @@ export default async function BillingPage() {
     console.error("Failed to fetch usage:", err)
   }
 
-  // 3. Fetch Transaction History
+  // 3. Fetch Transaction History (first page — the client paginates further)
   let transactions: any[] = []
+  let transactionsTotalPages = 1
   try {
-    const tx = await getTransactionHistoryAction()
+    const tx = await getTransactionHistoryAction(1, 50)
     if (tx) {
-      transactions = tx
+      transactions = tx.transactions
+      transactionsTotalPages = tx.totalPages
     }
   } catch (err) {
     console.error("Failed to fetch transactions:", err)
@@ -245,6 +225,7 @@ export default async function BillingPage() {
       initialUsage={usage}
       initialAiCreditUsage={aiCreditUsage}
       initialTransactions={transactions}
+      initialTransactionsTotalPages={transactionsTotalPages}
       isEnterpriseMode={enterprise}
       initialMasterInfra={masterInfra}
     />

@@ -5,14 +5,21 @@ import { redirect } from "next/navigation"
 import { WorkspaceManager } from "@/components/dashboard/workspace-manager"
 import { getUserPlanConfig } from "@/lib/tenant-plan"
 import { isEnterpriseTenant } from "@/lib/license"
-const globalId = await (await import("@/lib/settings")).getGlobalWorkspaceId();
-const SYSTEM_SLUGS = [globalId, "sacms-global", "sacms"]
+import { getGlobalWorkspaceId } from "@/lib/settings"
+import { cleanPrice } from "@/lib/plan-pricing"
 
 export default async function WorkspaceSelectionPage() {
   const session = await getServerSession(authOptions)
   if (!session?.user) redirect("/login")
 
   const isSuperAdmin = session.user.role === "super_admin"
+
+  // Resolved per-request rather than once at module load — the previous
+  // top-level `await` cached this for the process lifetime, so a DB hiccup
+  // at cold start (or the setting changing later) would silently wedge
+  // every request on a stale/empty value.
+  const globalId = await getGlobalWorkspaceId()
+  const SYSTEM_SLUGS = [globalId, "sacms-global", "sacms"]
 
   const whereClause: any = {
     slug: { notIn: SYSTEM_SLUGS },
@@ -106,12 +113,6 @@ export default async function WorkspaceSelectionPage() {
         select: { id: true, data: true }
       })
     ])
-
-    const cleanPrice = (val: any) => {
-      if (typeof val === 'number') return val
-      if (typeof val === 'string') return parseInt(val.replace(/[^\d]/g, ''), 10) || 0
-      return 0
-    }
 
     workspacePlans = wPlans.map(t => {
       const d = (typeof t.data === 'string' ? JSON.parse(t.data) : t.data) as any

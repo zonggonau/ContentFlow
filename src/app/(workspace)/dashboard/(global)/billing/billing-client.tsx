@@ -27,6 +27,7 @@ export default function BillingClient({
   initialUsage,
   initialAiCreditUsage,
   initialTransactions,
+  initialTransactionsTotalPages,
   isEnterpriseMode,
   initialMasterInfra
 }: {
@@ -36,6 +37,7 @@ export default function BillingClient({
   initialUsage: any
   initialAiCreditUsage?: { used: number, total: number, remaining: number, isUnlimited: boolean }
   initialTransactions: any[]
+  initialTransactionsTotalPages?: number
   isEnterpriseMode?: boolean
   initialMasterInfra?: { databaseUrl: string, storageConfig: any }
 }) {
@@ -49,13 +51,37 @@ export default function BillingClient({
   const [usage, setUsage] = useState<{current: number, max: number | null, allowed: boolean, plan: string} | null>(initialUsage)
   const [aiUsage, setAiUsage] = useState(initialAiCreditUsage || null)
   const [transactions, setTransactions] = useState<any[]>(initialTransactions)
+  const [transactionsPage, setTransactionsPage] = useState(1)
+  const [transactionsTotalPages, setTransactionsTotalPages] = useState(initialTransactionsTotalPages || 1)
+  const [loadingMoreTx, setLoadingMoreTx] = useState(false)
   const [checkingOrderId, setCheckingOrderId] = useState<string | null>(null)
 
   // Invoice Modal & Filter State
   const [selectedInvoice, setSelectedInvoice] = useState<TransactionInvoiceItem | null>(null)
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false)
   const [historySearchQuery, setHistorySearchQuery] = useState("")
+  const [debouncedHistorySearch, setDebouncedHistorySearch] = useState("")
   const [historyStatusFilter, setHistoryStatusFilter] = useState<"all" | "paid" | "pending" | "cancelled">("all")
+
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedHistorySearch(historySearchQuery), 300)
+    return () => clearTimeout(handler)
+  }, [historySearchQuery])
+
+  const handleLoadMoreTransactions = async () => {
+    setLoadingMoreTx(true)
+    try {
+      const nextPage = transactionsPage + 1
+      const result = await getTransactionHistoryAction(nextPage, 50)
+      setTransactions(prev => [...prev, ...result.transactions])
+      setTransactionsPage(nextPage)
+      setTransactionsTotalPages(result.totalPages)
+    } catch {
+      toast({ variant: "destructive", title: "Gagal", description: "Gagal memuat riwayat transaksi berikutnya." })
+    } finally {
+      setLoadingMoreTx(false)
+    }
+  }
 
   // Helper status checkers
   const isPaidStatus = (s: string) => {
@@ -97,8 +123,8 @@ export default function BillingClient({
       if (historyStatusFilter === "cancelled" && !isCancelledStatus(t.status)) return false
 
       // Search Query
-      if (historySearchQuery.trim()) {
-        const q = historySearchQuery.toLowerCase()
+      if (debouncedHistorySearch.trim()) {
+        const q = debouncedHistorySearch.toLowerCase()
         const orderId = (t.orderId || "").toLowerCase()
         const plan = (t.subscription?.plan || "").toLowerCase()
         const tenantName = (t.subscription?.tenant?.name || "").toLowerCase()
@@ -107,7 +133,7 @@ export default function BillingClient({
 
       return true
     })
-  }, [transactions, historyStatusFilter, historySearchQuery])
+  }, [transactions, historyStatusFilter, debouncedHistorySearch])
 
   const handlePayNow = (tx: any) => {
     if (tx.orderId.startsWith("ACC-")) {
@@ -121,7 +147,11 @@ export default function BillingClient({
       const packId = tx.rawResponse?.addonId || "ai-starter-50"
       router.push(`/dashboard/billing/checkout?addon=${packId}&type=addon`)
     } else {
-      router.push(`/dashboard/billing`)
+      toast({
+        variant: "destructive",
+        title: "Tidak Dapat Melanjutkan Pembayaran",
+        description: "Jenis transaksi ini tidak dikenali. Silakan hubungi dukungan pelanggan.",
+      })
     }
   }
 
@@ -851,6 +881,20 @@ export default function BillingClient({
                         </div>
                       )
                     })}
+                  </div>
+                )}
+                {transactionsPage < transactionsTotalPages && !debouncedHistorySearch.trim() && historyStatusFilter === "all" && (
+                  <div className="p-4 border-t border-border/60 flex justify-center">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleLoadMoreTransactions}
+                      disabled={loadingMoreTx}
+                      className="h-9 rounded-xl text-xs font-bold gap-1.5"
+                    >
+                      {loadingMoreTx ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                      Muat Riwayat Lainnya
+                    </Button>
                   </div>
                 )}
               </CardContent>
