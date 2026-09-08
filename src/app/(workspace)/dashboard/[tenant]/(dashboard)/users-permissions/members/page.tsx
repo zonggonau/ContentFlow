@@ -1,4 +1,4 @@
-﻿import { Suspense } from "react"
+import { Suspense } from "react"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { redirect } from "next/navigation"
@@ -6,6 +6,7 @@ import { db, getTenantDbById } from "@/lib/database"
 import { getTenantAccess } from "@/lib/tenant-access"
 import { MembersClient } from "./members-client"
 import { Skeleton } from "@/components/ui/skeleton"
+import { ensureSystemRoles } from "@/lib/permissions-engine"
 import { Metadata } from "next"
 
 export const metadata: Metadata = { title: "Application Users" }
@@ -23,6 +24,8 @@ export default async function MembersPage({
   if (!access) redirect(`/dashboard/${tenantSlug}`)
 
   const tenantDb = await getTenantDbById(access.tenantId)
+  await ensureSystemRoles(access.tenantId, tenantDb)
+
   const [members, roles, total, tenant] = await Promise.all([
     tenantDb.member.findMany({
       where: { tenantId: access.tenantId },
@@ -30,7 +33,7 @@ export default async function MembersPage({
       orderBy: { createdAt: "desc" },
       take: 25,
     }),
-    db.memberRole.findMany({
+    tenantDb.memberRole.findMany({
       where: { tenantId: access.tenantId },
       orderBy: [{ isSystem: "desc" }, { createdAt: "asc" }],
     }),

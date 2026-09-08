@@ -19,10 +19,15 @@ export default async function RolesPage({ params }: { params: Promise<{ tenant: 
   const access = await getTenantAccess(session, tenantSlug)
   if (!access) redirect(`/dashboard/${tenantSlug}`)
 
-  await ensureSystemRoles(access.tenantId)
+  // MemberRole/MemberRolePermission live in the tenant's own database for
+  // dedicated-DB (enterprise) tenants, same as Member — resolve it once and
+  // use it consistently instead of reading roles from the master `db`.
+  const tenantDb = await getTenantDbById(access.tenantId)
+
+  await ensureSystemRoles(access.tenantId, tenantDb)
 
   const [roles, contentTypes] = await Promise.all([
-    db.memberRole.findMany({
+    tenantDb.memberRole.findMany({
       where: { tenantId: access.tenantId },
       include: {
         permissions: { orderBy: [{ contentTypeSlug: "asc" }, { action: "asc" }] },
@@ -39,7 +44,6 @@ export default async function RolesPage({ params }: { params: Promise<{ tenant: 
     }),
   ])
 
-  const tenantDb = await getTenantDbById(access.tenantId)
   const memberCounts = await tenantDb.member.groupBy({
     by: ["role"],
     where: { tenantId: access.tenantId },

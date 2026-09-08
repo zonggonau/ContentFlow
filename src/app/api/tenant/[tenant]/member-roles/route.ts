@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { db, getTenantDbById } from "@/lib/database"
+import { getTenantDbById } from "@/lib/database"
 import { ensureSystemRoles } from "@/lib/permissions-engine"
 import { withStaffAuth, apiError, readJson } from "@/lib/api/route-helpers"
 
@@ -11,15 +11,15 @@ const CreateRoleSchema = z.object({
 })
 
 export const GET = withStaffAuth(async (_request, _context, { access }) => {
-  await ensureSystemRoles(access.tenantId)
+  const tenantDb = await getTenantDbById(access.tenantId)
+  await ensureSystemRoles(access.tenantId, tenantDb)
 
-  const roles = await db.memberRole.findMany({
+  const roles = await tenantDb.memberRole.findMany({
     where: { tenantId: access.tenantId },
     include: { _count: { select: { permissions: true } } },
     orderBy: [{ isSystem: "desc" }, { createdAt: "asc" }],
   })
 
-  const tenantDb = await getTenantDbById(access.tenantId)
   const memberCounts = await tenantDb.member.groupBy({ by: ["role"], where: { tenantId: access.tenantId }, _count: true })
   const countMap = Object.fromEntries(memberCounts.map((r) => [r.role, r._count]))
 
@@ -38,10 +38,11 @@ export const POST = withStaffAuth(
       return apiError("validation", { message: `"${slug}" is a reserved system role slug` })
     }
 
-    const existing = await db.memberRole.findFirst({ where: { tenantId: access.tenantId, slug } })
+    const tenantDb = await getTenantDbById(access.tenantId)
+    const existing = await tenantDb.memberRole.findFirst({ where: { tenantId: access.tenantId, slug } })
     if (existing) return apiError("conflict", { message: "A role with this slug already exists" })
 
-    const role = await db.memberRole.create({ data: { tenantId: access.tenantId, name, slug, description } })
+    const role = await tenantDb.memberRole.create({ data: { tenantId: access.tenantId, name, slug, description } })
     return NextResponse.json({ role }, { status: 201 })
   },
   { minRole: "admin" },

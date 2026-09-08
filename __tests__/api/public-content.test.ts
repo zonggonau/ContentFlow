@@ -11,11 +11,13 @@ vi.mock("@/lib/monitoring", () => ({
 
 vi.mock("@/lib/database", () => {
   const mockDb = {
+    tenant: { findFirst: vi.fn() },
     apiKey: { findUnique: vi.fn(), update: vi.fn() },
     apiToken: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     contentType: { findFirst: vi.fn() },
     contentEntry: { findMany: vi.fn(), count: vi.fn() },
     tenantLocale: { findFirst: vi.fn(), findMany: vi.fn() },
+    memberRole: { findFirst: vi.fn(), findMany: vi.fn() },
     $queryRawUnsafe: vi.fn(),
   }
   return {
@@ -38,22 +40,52 @@ function createRequest(
 describe("Public Content API GET Endpoint", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    
+
     // Set default mocks
+    vi.mocked(db.tenant.findFirst).mockResolvedValue({ id: "tenant-1", slug: "tenant-1", status: "active" } as any)
     vi.mocked(db.apiKey.findUnique).mockResolvedValue(null)
     vi.mocked(rateLimit).mockResolvedValue({ success: true, remaining: 99, limit: 100, resetAt: Date.now() + 60000 })
     vi.mocked(getCache).mockResolvedValue(null)
   })
 
-  it("should return 401 if authorization header is missing", async () => {
+  it("should be treated as the anonymous 'public' role when the authorization header is missing", async () => {
+    // No MemberRole row for "public" yet -> systemDefault("public") permits find/findOne.
+    vi.mocked(db.memberRole.findFirst).mockResolvedValue(null)
+    vi.mocked(db.contentType.findFirst).mockResolvedValue({
+      id: "type-articles",
+      name: "Articles",
+      slug: "articles",
+      schemaFields: [],
+      tenants: [],
+    } as any)
+    vi.mocked(db.contentEntry.findMany).mockResolvedValue([])
+    vi.mocked(db.contentEntry.count).mockResolvedValue(0)
+    vi.mocked(db.tenantLocale.findFirst).mockResolvedValue(null)
+
+    const req = createRequest("http://localhost:3000/api/public/tenant-1/content/articles", {})
+    const params = Promise.resolve({ tenant: "tenant-1", contentType: "articles" })
+
+    const response = await GET(req, { params })
+    expect(response.status).toBe(200)
+  })
+
+  it("should deny the anonymous 'public' role when its find permission is explicitly revoked", async () => {
+    vi.mocked(db.memberRole.findFirst).mockResolvedValue({
+      id: "role-public",
+      tenantId: "tenant-1",
+      slug: "public",
+      isSystem: true,
+      permissions: [{ contentTypeSlug: "*", action: "find", granted: false }],
+    } as any)
+
     const req = createRequest("http://localhost:3000/api/public/tenant-1/content/articles", {})
     const params = Promise.resolve({ tenant: "tenant-1", contentType: "articles" })
 
     const response = await GET(req, { params })
     expect(response.status).toBe(401)
-    
+
     const body = await response.json()
-    expect(body.error).toContain("Missing or invalid authorization")
+    expect(body.error).toContain("Authentication required")
   })
 
   it("should return 401 if API token is invalid", async () => {

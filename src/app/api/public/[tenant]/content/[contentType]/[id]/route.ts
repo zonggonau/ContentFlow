@@ -34,7 +34,10 @@ async function buildContentActor(
   if (actor.kind !== "member") {
     return actor.kind === "public" ? { kind: "public" } : { kind: "system" }
   }
-  const perm = await db.memberRolePermission.findFirst({
+  // MemberRole/MemberRolePermission live in the tenant's own database for
+  // dedicated-DB tenants — resolve the same client Member lookups use.
+  const tenantDb = await getTenantDb(actor.tenantId)
+  const perm = await tenantDb.memberRolePermission.findFirst({
     where: {
       memberRole: { tenantId: actor.tenantId, slug: actor.roleSlug },
       OR: [{ contentTypeSlug }, { contentTypeSlug: "*" }],
@@ -200,70 +203,34 @@ export async function GET(
 
     const fullUrl = request.url
 
-    // 1. Validate API token
-    const authHeader = request.headers.get("authorization")
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return logResponse(NextResponse.json(
-        { error: "Missing or invalid authorization header" },
-        { status: 401 }
-      ))
+    // 1. Resolve the caller: API token, member JWT, or anonymous "public" —
+    // and gate the "findOne" action against the RBAC engine for member/public.
+    const resolution = await resolvePublicApiActor(request, tenantSlug)
+    if (!resolution.ok) {
+      return logResponse(NextResponse.json({ error: resolution.error }, { status: resolution.status }))
+    }
+    const actor = resolution.actor
+
+    const denial = await authorizeActor(actor, contentTypeSlug, "findOne")
+    if (denial) {
+      return logResponse(NextResponse.json({ error: denial.error }, { status: denial.status }))
     }
 
-    const token = authHeader.replace("Bearer ", "")
-
-    let tenantId: string | null = null
-    let tenantSlugFromDb: string | null = null
-    let expiresAt: Date | null = null
-    let apiTokenType = "read-only"
-    let apiTokenId = ""
-    let isApiKey = false
-
-    const apiKey = await db.apiKey.findUnique({
-      where: { key: token },
-      include: { tenant: true },
-    })
-
-    if (apiKey) {
-      tenantId = apiKey.tenantId
-      tenantSlugFromDb = apiKey.tenant.slug
-      expiresAt = apiKey.expiresAt
-      apiTokenType = "full-access"
-      apiTokenId = apiKey.id
-      isApiKey = true
-    } else {
-      const hashedToken = createHash("sha256").update(token).digest("hex")
-      const apiToken = await db.apiToken.findUnique({
-        where: { token: hashedToken },
-        include: { tenant: true },
-      })
-
-      if (!apiToken) {
-        return logResponse(NextResponse.json({ error: "Invalid API token" }, { status: 401 }))
-      }
-
-      tenantId = apiToken.tenantId
-      tenantSlugFromDb = apiToken.tenant.slug
-      expiresAt = apiToken.expiresAt
-      apiTokenType = apiToken.type
-      apiTokenId = apiToken.id
-    }
+    const tenantId: string = actor.tenantId
+    const apiTokenType = actor.kind === "api-token" ? actor.accessLevel : "read-only"
+    const apiTokenId = actor.kind === "api-token" ? actor.tokenId : ""
+    const isApiKey = actor.kind === "api-token" && actor.isApiKey
 
     resolvedTenantId = tenantId
 
-    // 2. Verify tenant match
-    const isMatchingTenant = tenantId === tenantSlug || tenantSlugFromDb === tenantSlug
-    if (!isMatchingTenant) {
-      return logResponse(NextResponse.json({ error: "Token does not match tenant" }, { status: 403 }))
-    }
-
-    // 3. Expiry check
-    if (expiresAt && expiresAt < new Date()) {
-      return logResponse(NextResponse.json({ error: "API token expired" }, { status: 401 }))
-    }
-
-    // 4. Rate-limit check
-    const hashedTokenForRateLimit = createHash("sha256").update(token).digest("hex")
-    const rateLimitResult = await rateLimit(`public:${hashedTokenForRateLimit}`, RATE_LIMITS.publicApi)
+    // 2. Rate-limit check
+    const rateLimitKey =
+      actor.kind === "api-token"
+        ? `public:${createHash("sha256").update(actor.tokenId).digest("hex")}`
+        : actor.kind === "member"
+          ? `public:read:member:${actor.memberId}`
+          : `public:read:public:${request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown"}`
+    const rateLimitResult = await rateLimit(rateLimitKey, RATE_LIMITS.publicApi)
     if (!rateLimitResult.success) {
       return logResponse(NextResponse.json(
         { error: "Rate limit exceeded. Try again later." },
@@ -279,11 +246,8 @@ export async function GET(
       ))
     }
 
-    // 5. Get DB client
+    // 3. Get DB client
     const { getTenantDb } = await import("@/lib/database")
-    if (!tenantId) {
-      return logResponse(NextResponse.json({ error: "Invalid tenant ID" }, { status: 401 }))
-    }
     const tenantDb = await getTenantDb(tenantId)
 
     // 6. Resolve content type
@@ -326,8 +290,11 @@ export async function GET(
     const defaultLocale = tenantDefaultLocale?.locale ?? "id"
     const locale = requestedLocale ?? defaultLocale
 
-    // 8. Cache check
-    const cacheKey = `public_api_single:${tenantSlug}:${contentTypeSlug}:${entryIdOrDocId}:${apiTokenId}:${fullUrl}`
+    // 8. Cache check — members and anonymous callers share a cache entry per
+    // URL (both only ever see PUBLISHED content); full-access tokens get
+    // their own scope since they may see non-published content.
+    const cacheScope = apiTokenType === "full-access" ? apiTokenId : "public"
+    const cacheKey = `public_api_single:${tenantSlug}:${contentTypeSlug}:${entryIdOrDocId}:${cacheScope}:${fullUrl}`
     const cachedResponse = await getCache(cacheKey)
     if (cachedResponse) {
       return logResponse(NextResponse.json(cachedResponse, {
@@ -460,11 +427,13 @@ export async function GET(
 
     const shapedData = applyFieldSelection(populatedData, selectedFields)
 
-    // 12. Update token last used
-    if (isApiKey) {
-      db.apiKey.update({ where: { id: apiTokenId }, data: { lastUsed: new Date() } }).catch(() => {})
-    } else {
-      db.apiToken.update({ where: { id: apiTokenId }, data: { lastUsedAt: new Date() } }).catch(() => {})
+    // 12. Update token last used — only applies to API-token actors
+    if (actor.kind === "api-token") {
+      if (isApiKey) {
+        db.apiKey.update({ where: { id: apiTokenId }, data: { lastUsed: new Date() } }).catch(() => {})
+      } else {
+        db.apiToken.update({ where: { id: apiTokenId }, data: { lastUsedAt: new Date() } }).catch(() => {})
+      }
     }
 
     const responsePayload = {

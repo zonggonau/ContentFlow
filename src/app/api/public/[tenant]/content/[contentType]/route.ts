@@ -59,82 +59,37 @@ export async function GET(
 
     const fullUrl = request.url
 
-    // Validate API token (supports Authorization: Bearer <key> OR x-api-key: <key>)
-    const authHeader = request.headers.get("authorization")
-    const xApiKey = request.headers.get("x-api-key") || request.headers.get("X-API-Key")
-    
-    let token = ""
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      token = authHeader.replace("Bearer ", "").trim()
-    } else if (xApiKey) {
-      token = xApiKey.trim()
+    // Resolve the caller: API token (full-access/read-only), member JWT, or
+    // anonymous "public" — and gate the "find" action against the Strapi-parity
+    // RBAC engine for member/public callers. API tokens remain trusted
+    // credentials (read-only tokens may only read, matching prior behavior).
+    const resolution = await resolvePublicApiActor(request, tenantSlug)
+    if (!resolution.ok) {
+      return logResponse(NextResponse.json({ error: resolution.error }, { status: resolution.status }))
+    }
+    const actor = resolution.actor
+
+    const denial = await authorizeActor(actor, contentTypeSlug, "find")
+    if (denial) {
+      return logResponse(NextResponse.json({ error: denial.error }, { status: denial.status }))
     }
 
-    if (!token) {
-      return logResponse(NextResponse.json(
-        { error: "Missing or invalid authorization or x-api-key header" },
-        { status: 401 }
-      ))
-    }
+    const tenantId: string = actor.tenantId
+    const apiTokenType = actor.kind === "api-token" ? actor.accessLevel : "read-only"
+    const apiTokenId = actor.kind === "api-token" ? actor.tokenId : ""
+    const isApiKey = actor.kind === "api-token" && actor.isApiKey
 
-    // First try to find in ApiKey (plain text)
-    let tenantId: string | null = null
-    let tenantSlugFromDb: string | null = null
-    let expiresAt: Date | null = null
-    let apiTokenType = "read-only"
-    let apiTokenId = ""
-    let isApiKey = false
-
-    const apiKey = await db.apiKey.findUnique({
-      where: { key: token },
-      include: { tenant: true },
-    })
-
-    if (apiKey) {
-      tenantId = apiKey.tenantId
-      tenantSlugFromDb = apiKey.tenant.slug
-      expiresAt = apiKey.expiresAt
-      apiTokenType = "full-access"
-      apiTokenId = apiKey.id
-      isApiKey = true
-    } else {
-      // Fallback to ApiToken (hashed or direct token value)
-      const hashedToken = createHash("sha256").update(token).digest("hex")
-      const apiToken = await db.apiToken.findFirst({
-        where: { token: hashedToken },
-        include: { tenant: true },
-      })
-
-      if (!apiToken) {
-        return logResponse(NextResponse.json({ error: "Invalid API token" }, { status: 401 }))
-      }
-      
-      tenantId = apiToken.tenantId
-      tenantSlugFromDb = apiToken.tenant.slug
-      expiresAt = apiToken.expiresAt
-      apiTokenType = apiToken.type
-      apiTokenId = apiToken.id
-    }
-
-    // Update resolved tenant ID once token is verified
+    // Update resolved tenant ID once the actor is verified
     resolvedTenantId = tenantId
 
-    // Verify tenant matches (check both ID and Slug)
-    const isMatchingTenant = tenantId === tenantSlug || tenantSlugFromDb === tenantSlug
-    
-    if (!isMatchingTenant) {
-      return logResponse(NextResponse.json({ error: "Token does not match tenant" }, { status: 403 }))
-    }
-
-    // Check if token is expired
-    if (expiresAt && expiresAt < new Date()) {
-      return logResponse(NextResponse.json({ error: "API token expired" }, { status: 401 }))
-    }
-
-    // Rate-limit only after authentication. The raw credential is never used as a Redis key.
-    // Hash the token for rate limiting to avoid storing raw tokens in Redis
-    const hashedTokenForRateLimit = createHash("sha256").update(token).digest("hex")
-    const rateLimitResult = await rateLimit(`public:${hashedTokenForRateLimit}`, RATE_LIMITS.publicApi)
+    // Rate-limit only after authentication.
+    const rateLimitKey =
+      actor.kind === "api-token"
+        ? `public:${createHash("sha256").update(actor.tokenId).digest("hex")}`
+        : actor.kind === "member"
+          ? `public:read:member:${actor.memberId}`
+          : `public:read:public:${request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown"}`
+    const rateLimitResult = await rateLimit(rateLimitKey, RATE_LIMITS.publicApi)
     if (!rateLimitResult.success) {
       return logResponse(NextResponse.json(
         { error: "Rate limit exceeded. Try again later." },
@@ -152,9 +107,6 @@ export async function GET(
 
     // Get the correct DB client (Shared or Dedicated)
     const { getTenantDb } = await import("@/lib/database")
-    if (!tenantId) {
-      return logResponse(NextResponse.json({ error: "Invalid tenant ID" }, { status: 401 }))
-    }
     const tenantDb = await getTenantDb(tenantId)
 
     // Get content type with fields (must belong to this tenant or be global and assigned to this tenant)
@@ -220,9 +172,13 @@ export async function GET(
       return logResponse(NextResponse.json({ error: "Invalid content status" }, { status: 400 }))
     }
 
-    // Cache is checked only after token, tenant, expiry, content type, and status authorization.
-    // Include token id because full-access tokens may have a different view from read-only tokens.
-    const cacheKey = `public_api:${tenantSlug}:${contentTypeSlug}:${apiTokenId}:${fullUrl}`
+    // Cache is checked only after actor, tenant, content type, and status
+    // authorization. The cache-scope segment distinguishes full-access
+    // tokens (which may see non-published content) from everyone else —
+    // members and anonymous callers share a cache entry per URL since both
+    // only ever see PUBLISHED content with no per-actor row filtering.
+    const cacheScope = apiTokenType === "full-access" ? apiTokenId : "public"
+    const cacheKey = `public_api:${tenantSlug}:${contentTypeSlug}:${cacheScope}:${fullUrl}`
     const cachedResponse = await getCache(cacheKey)
     if (cachedResponse) {
       return logResponse(NextResponse.json(cachedResponse, {
@@ -520,17 +476,19 @@ export async function GET(
     })
     // ----------------------------------------------
 
-    // Update last used (fire and forget)
-    if (isApiKey) {
-      db.apiKey.update({
-        where: { id: apiTokenId },
-        data: { lastUsed: new Date() },
-      }).catch(() => {})
-    } else {
-      db.apiToken.update({
-        where: { id: apiTokenId },
-        data: { lastUsedAt: new Date() },
-      }).catch(() => {})
+    // Update last used (fire and forget) — only applies to API-token actors
+    if (actor.kind === "api-token") {
+      if (isApiKey) {
+        db.apiKey.update({
+          where: { id: apiTokenId },
+          data: { lastUsed: new Date() },
+        }).catch(() => {})
+      } else {
+        db.apiToken.update({
+          where: { id: apiTokenId },
+          data: { lastUsedAt: new Date() },
+        }).catch(() => {})
+      }
     }
 
     const headers = new Headers({

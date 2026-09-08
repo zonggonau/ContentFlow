@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
-import { db } from "@/lib/database"
+import { getTenantDbById } from "@/lib/database"
 import { invalidatePermissionCache } from "@/lib/permissions-engine"
 import { withStaffAuth, apiError, readJson } from "@/lib/api/route-helpers"
 
@@ -13,9 +13,10 @@ const PermissionsSchema = z.object({
   })),
 })
 
-export const GET = withStaffAuth(async (_request, context) => {
+export const GET = withStaffAuth(async (_request, context, { access }) => {
   const { roleId } = await context.params
-  const perms = await db.memberRolePermission.findMany({
+  const tenantDb = await getTenantDbById(access.tenantId)
+  const perms = await tenantDb.memberRolePermission.findMany({
     where: { memberRoleId: roleId },
     orderBy: [{ contentTypeSlug: "asc" }, { action: "asc" }],
   })
@@ -26,16 +27,17 @@ export const GET = withStaffAuth(async (_request, context) => {
 export const PUT = withStaffAuth(
   async (request, context, { access }) => {
     const { roleId } = await context.params
-    const role = await db.memberRole.findFirst({ where: { id: roleId, tenantId: access.tenantId } })
+    const tenantDb = await getTenantDbById(access.tenantId)
+    const role = await tenantDb.memberRole.findFirst({ where: { id: roleId, tenantId: access.tenantId } })
     if (!role) return apiError("not_found", { message: "Role not found" })
 
     const body = await readJson(request, PermissionsSchema)
     if (!body.ok) return body.response
     const { permissions } = body.data
 
-    await db.$transaction([
-      db.memberRolePermission.deleteMany({ where: { memberRoleId: roleId } }),
-      db.memberRolePermission.createMany({
+    await tenantDb.$transaction([
+      tenantDb.memberRolePermission.deleteMany({ where: { memberRoleId: roleId } }),
+      tenantDb.memberRolePermission.createMany({
         data: permissions.map((p) => ({
           memberRoleId: roleId,
           contentTypeSlug: p.contentTypeSlug,

@@ -100,15 +100,16 @@ export const POST = withStaffAuth(
     if (!body.ok) return body.response
     const { email, name, password, role, status, metadata } = body.data
 
+    const tenantDb = await getTenantDbById(access.tenantId)
+
     if (role !== "authenticated") {
-      const known = await db.memberRole.findFirst({
+      const known = await tenantDb.memberRole.findFirst({
         where: { tenantId: access.tenantId, slug: role },
         select: { id: true },
       })
       if (!known) return apiError("validation", { message: `Unknown member role: ${role}` })
     }
 
-    const tenantDb = await getTenantDbById(access.tenantId)
     const existing = await tenantDb.member.findFirst({ where: { tenantId: access.tenantId, email } })
     if (existing) return apiError("conflict", { message: "A member with this email already exists" })
 

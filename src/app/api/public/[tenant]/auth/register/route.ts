@@ -102,7 +102,7 @@ export async function POST(
     // Hash password with bcrypt
     const passwordHash = await hashMemberPassword(password)
 
-    await ensureSystemRoles(tenant.id)
+    await ensureSystemRoles(tenant.id, tenantDb)
 
     const requireVerification = !!policy?.requireMemberEmailVerification
 

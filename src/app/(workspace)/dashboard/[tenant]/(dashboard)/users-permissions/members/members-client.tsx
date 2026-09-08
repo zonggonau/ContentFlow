@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { Users, UserPlus, Search, Shield, MoreHorizontal, CheckCircle, XCircle, Clock } from "lucide-react"
+import { useState, useEffect } from "react"
+import { Users, UserPlus, Search, Shield, MoreHorizontal, CheckCircle, XCircle, Clock, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -216,16 +216,58 @@ export function MembersClient({ tenantSlug, initialMembers, roles, total, policy
   }
   const [members, setMembers] = useState<Member[]>(initialMembers)
   const [search, setSearch] = useState("")
+  const [debouncedSearch, setDebouncedSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
   const [roleFilter, setRoleFilter] = useState("all")
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageCount, setPageCount] = useState(Math.max(1, Math.ceil(total / 25)))
+  const [totalMembers, setTotalMembers] = useState(total)
+  const [loading, setLoading] = useState(false)
 
-  const filtered = members.filter(m => {
-    const matchSearch = !search || m.email.includes(search) || (m.name ?? "").toLowerCase().includes(search.toLowerCase())
-    const matchStatus = statusFilter === "all" || m.status === statusFilter
-    const matchRole = roleFilter === "all" || m.role === roleFilter
-    return matchSearch && matchStatus && matchRole
-  })
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 400)
+    return () => clearTimeout(handler)
+  }, [search])
+
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, roleFilter])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const fetchMembers = async () => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams({ page: String(page), pageSize: "25" })
+        if (debouncedSearch) params.set("search", debouncedSearch)
+        if (statusFilter !== "all") params.set("status", statusFilter)
+        if (roleFilter !== "all") params.set("role", roleFilter)
+        const res = await fetch(`/api/tenant/${tenantSlug}/app-members?${params.toString()}`, {
+          signal: controller.signal,
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setMembers(data.members ?? [])
+          setTotalMembers(data.pagination?.total ?? 0)
+          setPageCount(Math.max(1, data.pagination?.pageCount ?? 1))
+        }
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          toast.error("Gagal memuat daftar pengguna")
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchMembers()
+    return () => controller.abort()
+  }, [tenantSlug, page, debouncedSearch, statusFilter, roleFilter])
+
+  const filtered = members
 
   const handleSuspend = async (member: Member) => {
     const newStatus = member.status === "active" ? "suspended" : "active"
@@ -244,6 +286,7 @@ export function MembersClient({ tenantSlug, initialMembers, roles, total, policy
     const res = await fetch(`/api/tenant/${tenantSlug}/app-members/${memberId}`, { method: "DELETE" })
     if (res.ok) {
       setMembers(prev => prev.filter(mem => mem.id !== memberId))
+      setTotalMembers(t => Math.max(0, t - 1))
       toast.success("Pengguna dihapus")
     }
   }
@@ -252,7 +295,7 @@ export function MembersClient({ tenantSlug, initialMembers, roles, total, policy
     <PageContainer>
       <PageHeader
         title={<span className="flex items-center gap-2"><Users className="h-6 w-6" /> Pengguna Aplikasi</span>}
-        description={`${total} anggota end-user di seluruh aplikasi Anda`}
+        description={`${totalMembers} anggota end-user di seluruh aplikasi Anda`}
         action={
           <>
             <Button variant="outline" size="sm" asChild>
@@ -260,7 +303,10 @@ export function MembersClient({ tenantSlug, initialMembers, roles, total, policy
                 <Shield className="h-4 w-4" /> Kelola Peran
               </a>
             </Button>
-            <AddMemberDialog tenantSlug={tenantSlug} roles={roles} onSuccess={mem => setMembers(prev => [mem, ...prev])} />
+            <AddMemberDialog tenantSlug={tenantSlug} roles={roles} onSuccess={mem => {
+              setMembers(prev => [mem, ...prev])
+              setTotalMembers(t => t + 1)
+            }} />
           </>
         }
       />
@@ -334,9 +380,9 @@ export function MembersClient({ tenantSlug, initialMembers, roles, total, policy
                       <div className="text-xs text-muted-foreground">{member.email}</div>
                     </div>
                     {member.emailVerified ? (
-                      <CheckCircle className="h-3.5 w-3.5 text-green-500 ml-1" title="Email terverifikasi" />
+                      <span title="Email terverifikasi"><CheckCircle className="h-3.5 w-3.5 text-green-500 ml-1" /></span>
                     ) : (
-                      <XCircle className="h-3.5 w-3.5 text-muted-foreground ml-1" title="Email belum terverifikasi" />
+                      <span title="Email belum terverifikasi"><XCircle className="h-3.5 w-3.5 text-muted-foreground ml-1" /></span>
                     )}
                   </div>
                 </TableCell>
@@ -375,6 +421,33 @@ export function MembersClient({ tenantSlug, initialMembers, roles, total, policy
           </TableBody>
         </Table>
       </div>
+
+      {pageCount > 1 && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground flex items-center gap-2">
+            {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Halaman {page} dari {pageCount}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page <= 1 || loading}
+            >
+              <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Sebelumnya
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+              disabled={page >= pageCount || loading}
+            >
+              Berikutnya <ChevronRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </div>
+        </div>
+      )}
     </PageContainer>
   )
 }

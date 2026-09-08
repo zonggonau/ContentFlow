@@ -69,7 +69,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     const passwordHash = await hashMemberPassword(password)
 
-    await ensureSystemRoles(tenant.id)
+    await ensureSystemRoles(tenant.id, tenantDb)
 
     const requireVerification = !!policy?.requireMemberEmailVerification
 

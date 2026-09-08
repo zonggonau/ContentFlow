@@ -13,6 +13,7 @@
 
 import { getRedis } from "@/lib/redis"
 import { db } from "@/lib/database"
+import type { PrismaClient } from "../../prisma/generated-client"
 
 export type ContentAction = "find" | "findOne" | "create" | "update" | "delete"
 
@@ -105,9 +106,10 @@ function systemDefault(roleSlug: string): PermissionMap {
  */
 async function loadPermissions(
   tenantId: string,
-  roleSlug: string
+  roleSlug: string,
+  client: PrismaClient = db
 ): Promise<PermissionMap> {
-  const role = await db.memberRole.findFirst({
+  const role = await client.memberRole.findFirst({
     where: { tenantId, slug: roleSlug },
     include: { permissions: true },
   })
@@ -145,13 +147,14 @@ export async function canPerform(
   tenantId: string,
   roleSlug: string,
   contentTypeSlug: string,
-  action: ContentAction
+  action: ContentAction,
+  client: PrismaClient = db
 ): Promise<boolean> {
   // Try cache
   let permissions = await getCachedPermissions(tenantId, roleSlug)
 
   if (!permissions) {
-    permissions = await loadPermissions(tenantId, roleSlug)
+    permissions = await loadPermissions(tenantId, roleSlug, client)
     await setCachedPermissions(tenantId, roleSlug, permissions)
   }
 
@@ -189,8 +192,8 @@ export function resolveRoleFromJwt(
  * Ensure a tenant has the two required system roles ("public" and "authenticated").
  * Safe to call multiple times - skips if already exists.
  */
-export async function ensureSystemRoles(tenantId: string): Promise<void> {
-  const existing = await db.memberRole.findMany({
+export async function ensureSystemRoles(tenantId: string, client: PrismaClient = db): Promise<void> {
+  const existing = await client.memberRole.findMany({
     where: { tenantId, isSystem: true },
     select: { slug: true },
   })
@@ -214,6 +217,6 @@ export async function ensureSystemRoles(tenantId: string): Promise<void> {
   ].filter((r) => !existingSlugs.has(r.slug))
 
   if (toCreate.length > 0) {
-    await db.memberRole.createMany({ data: toCreate, skipDuplicates: true })
+    await client.memberRole.createMany({ data: toCreate, skipDuplicates: true })
   }
 }

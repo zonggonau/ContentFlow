@@ -197,8 +197,13 @@ export async function authorizeActor(
     return { status: 403, error: "A full-access API token is required for write operations" }
   }
 
+  // MemberRole / MemberRolePermission live in the tenant's own database
+  // (dedicated-DB tenants get the full schema pushed via
+  // deployTenantDatabaseSchema) — resolve the same client Member lookups
+  // use, so permission checks don't silently read from the wrong database.
   const roleSlug = actor.kind === "public" ? SYSTEM_ROLES.PUBLIC : actor.roleSlug
-  const allowed = await canPerform(actor.tenantId, roleSlug, contentTypeSlug, action)
+  const tenantDb = await getTenantDb(actor.tenantSlug)
+  const allowed = await canPerform(actor.tenantId, roleSlug, contentTypeSlug, action, tenantDb)
   if (allowed) return null
 
   return {
