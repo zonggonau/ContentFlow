@@ -74,7 +74,7 @@ export default function TenantSettingsPage() {
   useEffect(() => {
     const tab = searchParams?.get("tab")
     if (tab === "domains") {
-      router.replace(`/dashboard/${tenantSlug}/domains`)
+      router.replace(`/dashboard/${tenantSlug}/deployments?tab=domains`)
     } else if (tab === "infrastructure") {
       router.replace(`/dashboard/${tenantSlug}/infrastructure`)
     } else if (tab) {

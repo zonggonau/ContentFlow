@@ -34,12 +34,12 @@ import {
   Puzzle,
   Shield,
   Code,
-  Globe,
   Server,
   Lock,
   Headphones,
   UserCheck,
   ShieldCheck,
+  Rocket,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useState, useEffect, useMemo } from "react"
@@ -61,7 +61,7 @@ const s = {
   memberRoles: "Member Roles & Access",
   auditLog: "Activity Log",
   subscriptions: "Plans & Billing",
-  customDomains: "Custom Domains",
+  deployments: "Hosting & Deployments",
   infrastructure: "Infrastructure & DB",
   developer: "Developer & API",
   workspaceSettings: "Workspace Settings",
@@ -257,7 +257,7 @@ export function TenantSidebar({ tenantId: propId, tenantSlug, tenants, isEnterpr
       label: s.groupSettings,
       items: [
         ...(isAdmin ? [
-          { title: s.customDomains, href: "/domains", icon: Globe, matchPrefix: true },
+          { title: s.deployments, href: "/deployments", icon: Rocket, matchPrefix: true, badge: "VERCEL" },
           {
             title: s.infrastructure,
             href: "/infrastructure",
