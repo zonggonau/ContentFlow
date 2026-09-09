@@ -345,9 +345,9 @@ query {
 }
 ```
 
-## 15. MCP server integration (IDE AI agents)
+## 15. MCP server integration (Antigravity & VS Code)
 
-SaCMS exposes a Model Context Protocol (MCP) server so an AI agent running inside an IDE — Antigravity, VS Code (GitHub Copilot Chat), Cursor, Claude Desktop, Windsurf, Cline — can design, build, populate, and deploy a tenant's schema and content directly from a normal chat session in that IDE, with no separate SaCMS UI open.
+SaCMS exposes a Model Context Protocol (MCP) server so the AI agent built into **Antigravity** or **VS Code** (GitHub Copilot Chat, Agent mode) can design, build, populate, and deploy a tenant's schema and content directly from a normal chat session in that IDE, with no separate SaCMS UI open. These are the only two clients this integration is documented/supported for.
 
 ```text
 Endpoint: https://your-host/api/mcp
@@ -382,24 +382,9 @@ Reload the window, then open Copilot Chat in Agent mode — the `sacms` tools ap
 
 ### 15.2 Configure in Antigravity
 
-Antigravity reads MCP servers from its own settings panel (Settings → MCP Servers) or an equivalent `mcp.json`, using the same shape as VS Code/Claude Desktop (`type: "http"`, `url`, `headers`). Point it at the same `/api/mcp` endpoint and Bearer token — there is no SaCMS-specific Antigravity plugin; it is the same generic MCP server every other client above connects to.
+Antigravity reads MCP servers from its own settings panel (Settings → MCP Servers) or an equivalent `mcp.json`, using the same shape as above (`type: "http"`, `url`, `headers`). Point it at the same `/api/mcp` endpoint and Bearer token — there is no SaCMS-specific Antigravity plugin; it connects to the exact same generic MCP server as VS Code.
 
-### 15.3 Configure in Claude Desktop / Cursor / Windsurf / Cline
-
-Each of these reads its own `mcp.json`/`mcp_config.json` in a client-specific location, but the server entry is the same shape:
-
-```json
-{
-  "mcpServers": {
-    "sacms": {
-      "url": "https://your-host/api/mcp",
-      "headers": { "Authorization": "Bearer cf_your_token" }
-    }
-  }
-}
-```
-
-### 15.4 What the agent can do once connected
+### 15.3 What the agent can do once connected
 
 Once the IDE's agent has the `sacms` tools available, a normal chat prompt — no special UI, no dedicated panel — can drive the same operations this manual's other sections cover manually:
 
@@ -410,9 +395,9 @@ Once the IDE's agent has the `sacms` tools available, a normal chat prompt — n
 
 The agent still operates strictly within the token's tenant and permission scope — it cannot see or touch another tenant's data, and a read-only token cannot call the `create_*`/`update_*`/`delete_*`/`deploy_*` tools.
 
-### 15.5 Known limitation: no visual panel
+### 15.4 Known limitation: no visual panel
 
-MCP is a tool-calling protocol, not a UI framework — connecting the server above gives the IDE's AI agent new things it can *do* via the IDE's own chat interface, not a SaCMS-branded prompt box, live preview pane, or Deploy button rendered inside the IDE. A dedicated visual panel (type a prompt in a custom sidebar, see a live preview, click Deploy) would need a separate VS Code Extension (and a separate Antigravity-specific integration, since MCP config alone cannot add a custom webview) built against SaCMS's existing generate-frontend/deploy APIs — a different, larger project from connecting this MCP server.
+MCP is a tool-calling protocol, not a UI framework — connecting the server above gives Antigravity's or VS Code's AI agent new things it can *do* via that IDE's own chat interface, not a SaCMS-branded prompt box, live preview pane, or Deploy button rendered inside the IDE. A dedicated visual panel (type a prompt in a custom sidebar, see a live preview, click Deploy) would need a separate VS Code Extension (and a separate Antigravity-specific integration, since MCP config alone cannot add a custom webview) built against SaCMS's existing generate-frontend/deploy APIs — a different, larger project from connecting this MCP server.
 
 ## 16. Webhooks
 

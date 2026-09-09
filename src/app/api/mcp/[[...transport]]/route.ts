@@ -4,8 +4,10 @@
  * Full CRUD capabilities for Content Types, Single Types, Components,
  * Content Entries, and Webhooks.
  *
- * Enables AI agents (v0, Cursor, Claude Desktop, Antigravity, VS Code, Windsurf, Cline)
- * to design, build, populate, and automate dynamic websites directly through MCP.
+ * Documented/supported IDE agents: Antigravity and VS Code (GitHub Copilot
+ * Chat, Agent mode). The server itself speaks standard MCP over Streamable
+ * HTTP, so any compliant MCP client can in principle connect — see
+ * docs/11-User_Manual_and_Integrations.md §15 for the two supported setups.
  *
  * Auth: Standard HTTP Bearer token (Authorization: Bearer <API_TOKEN>)
  * URL:  /api/mcp
