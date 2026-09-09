@@ -1,4 +1,5 @@
 import { v0 } from "v0"
+import { isMockAllowed, requireCredentialOutsideMock } from "./dev-mode"
 
 export interface V0File {
   name: string
@@ -368,6 +369,15 @@ export async function createV0Chat(
   // returned an account-level error (e.g. out of v0 credits) — a real local
   // fallback, not a disguised one. Surface the real reason so the caller can
   // tell the user what actually happened instead of a generic failure.
+  //
+  // In production, only fall back when V0_API_KEY actually exists (a real
+  // outage/quota/timeout) — never silently fabricate a chat when the key is
+  // simply missing; that must fail loudly so a misconfigured deploy is
+  // caught immediately instead of quietly serving fake generations forever.
+  const hasV0Credential = Boolean(process.env.V0_API_KEY?.trim())
+  if (!hasV0Credential && !isMockAllowed("v0", hasV0Credential)) {
+    requireCredentialOutsideMock("v0", "V0_API_KEY")
+  }
   const fallbackChatId = `sacms_gen_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 7)}`
   const fallbackFiles = generateFallbackFiles(prompt, modelName)
 

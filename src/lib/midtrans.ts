@@ -1,5 +1,6 @@
 import Midtrans from 'midtrans-client'
 import crypto from 'crypto'
+import { isMockAllowed, requireCredentialOutsideMock } from './dev-mode'
 
 interface CustomerDetails {
   email: string
@@ -44,6 +45,23 @@ async function getMidtransClient(): Promise<any> {
 export async function createSnapPayment(
   params: CreatePaymentParams
 ): Promise<SnapTransactionResponse> {
+  // This legacy helper bypasses the lib/payment abstraction (and its
+  // registered MockPaymentProvider) entirely, so it needs its own dev/test
+  // fallback — without one, every caller (e.g. domain checkout) would throw
+  // on any environment lacking a real MIDTRANS_SERVER_KEY, including local
+  // dev/test. Mirrors the same NODE_ENV-gated rule as lib/payment/index.ts.
+  const hasMidtransCredential = Boolean(process.env.MIDTRANS_SERVER_KEY?.trim())
+  if (!hasMidtransCredential) {
+    if (!isMockAllowed('midtrans', hasMidtransCredential)) {
+      requireCredentialOutsideMock('midtrans', 'MIDTRANS_SERVER_KEY')
+    }
+    console.warn('[midtrans] MIDTRANS_SERVER_KEY not set — simulating Snap payment creation (dev/test only).')
+    return {
+      token: `mock_token_${params.orderId}`,
+      redirect_url: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/dashboard/payment/mock?orderId=${encodeURIComponent(params.orderId)}`,
+    }
+  }
+
   try {
     const client = await getMidtransClient()
     const transaction = await client.createTransaction({
@@ -124,7 +142,8 @@ export function verifyNotificationSignature(
  */
 export async function getTransactionStatus(orderId: string) {
   try {
-    const transaction = await midtransClient.transaction.status(orderId)
+    const client = await getMidtransClient()
+    const transaction = await client.transaction.status(orderId)
     return transaction
   } catch (error: any) {
     if (
@@ -149,7 +168,8 @@ export async function getTransactionStatus(orderId: string) {
  */
 export async function cancelTransaction(orderId: string) {
   try {
-    await midtransClient.transaction.cancel(orderId)
+    const client = await getMidtransClient()
+    await client.transaction.cancel(orderId)
     return true
   } catch (error) {
     console.error('Error canceling transaction:', error)
@@ -162,7 +182,8 @@ export async function cancelTransaction(orderId: string) {
  */
 export async function refundTransaction(orderId: string) {
   try {
-    await midtransClient.transaction.refund(orderId)
+    const client = await getMidtransClient()
+    await client.transaction.refund(orderId)
     return true
   } catch (error) {
     console.error('Error refunding transaction:', error)

@@ -5,6 +5,7 @@
  */
 
 import { getPlatformSettings } from "./settings"
+import { isMockAllowed, requireCredentialOutsideMock } from "./dev-mode"
 
 const VERCEL_API_BASE = "https://api.vercel.com"
 
@@ -80,6 +81,7 @@ export async function deployToVercel(
   // expected to reject/warn on this in any environment that isn't local dev,
   // rather than presenting it as a real deployment.
   if (!token) {
+    if (!isMockAllowed("vercel", false)) requireCredentialOutsideMock("vercel", "VERCEL_ACCESS_TOKEN")
     console.warn("[Vercel Client] VERCEL_ACCESS_TOKEN not set in settings or env. Simulating instant deployment.")
     const sanitizedName = projectName.toLowerCase().replace(/[^a-z0-9-]/g, "-")
     return {
@@ -140,6 +142,7 @@ export async function deployToVercel(
 export async function getDeploymentStatus(deploymentId: string): Promise<{ state: string; url: string; simulated?: boolean }> {
   const token = await getVercelToken()
   if (!token) {
+    if (!isMockAllowed("vercel", false)) requireCredentialOutsideMock("vercel", "VERCEL_ACCESS_TOKEN")
     return { state: "READY", url: `https://sacms-site.vercel.app`, simulated: true }
   }
 
@@ -164,6 +167,7 @@ export async function addDomainToProject(
 ): Promise<VercelDomainResult> {
   const token = await getVercelToken()
   if (!token) {
+    if (!isMockAllowed("vercel", false)) requireCredentialOutsideMock("vercel", "VERCEL_ACCESS_TOKEN")
     return {
       name: domain,
       verified: true,
@@ -214,6 +218,7 @@ export async function getDomainConfig(domain: string): Promise<{
 }> {
   const token = await getVercelToken()
   if (!token) {
+    if (!isMockAllowed("vercel", false)) requireCredentialOutsideMock("vercel", "VERCEL_ACCESS_TOKEN")
     return { cname: "cname.vercel-dns.com", aRecord: "76.76.21.21", configured: true, simulated: true }
   }
 

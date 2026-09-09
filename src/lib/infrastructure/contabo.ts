@@ -1,4 +1,5 @@
 import { getRedis } from '../redis'
+import { isMockAllowed, requireCredentialOutsideMock } from '../dev-mode'
 
 export interface ContaboPlanDefinition {
   id: string
@@ -630,6 +631,7 @@ function getRequestHeaders(token: string) {
 export async function createContaboInstance(params: CreateInstanceParams): Promise<ContaboInstanceResponse> {
   // If not configured (e.g. local dev / test), return a deterministic simulated instance
   if (!isContaboConfigured()) {
+    if (!isMockAllowed("contabo", false)) requireCredentialOutsideMock("contabo", "CONTABO_CLIENT_ID / CONTABO_CLIENT_SECRET / CONTABO_API_USER / CONTABO_API_PASSWORD")
     console.warn('[Contabo API] Running in SIMULATION mode (missing credentials).')
     const mockId = Math.floor(100000 + Math.random() * 900000)
     const mockIp = `161.97.${Math.floor(Math.random() * 250)}.${Math.floor(1 + Math.random() * 250)}`
@@ -882,6 +884,7 @@ export function buildSacmsDefaultFirewallRules(allowedManagementIps: string[] = 
  */
 export async function createContaboFirewall(params: CreateFirewallParams): Promise<ContaboFirewallResponse> {
   if (!isContaboConfigured()) {
+    if (!isMockAllowed("contabo", false)) requireCredentialOutsideMock("contabo", "CONTABO_CLIENT_ID / CONTABO_CLIENT_SECRET / CONTABO_API_USER / CONTABO_API_PASSWORD")
     console.warn('[Contabo API] createContaboFirewall running in SIMULATION mode.')
     return {
       firewallId: `sim-fw-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -936,6 +939,7 @@ export async function createContaboFirewall(params: CreateFirewallParams): Promi
  */
 export async function listContaboFirewalls(nameFilter?: string): Promise<ContaboFirewallResponse[]> {
   if (!isContaboConfigured()) {
+    if (!isMockAllowed("contabo", false)) requireCredentialOutsideMock("contabo", "CONTABO_CLIENT_ID / CONTABO_CLIENT_SECRET / CONTABO_API_USER / CONTABO_API_PASSWORD")
     return [
       {
         firewallId: 'sim-fw-default',

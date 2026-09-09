@@ -130,7 +130,8 @@ export class MidtransProvider implements PaymentProvider {
     orderId: string
   ): Promise<TransactionStatusResult> {
     try {
-      const result = await this.snap.transaction.status(orderId)
+      const { snap } = await this.getSnapClient()
+      const result = await snap.transaction.status(orderId)
       return {
         orderId,
         status: mapMidtransStatus(result.transaction_status),
@@ -160,7 +161,8 @@ export class MidtransProvider implements PaymentProvider {
 
   async cancelTransaction(orderId: string): Promise<boolean> {
     try {
-      await this.snap.transaction.cancel(orderId)
+      const { snap } = await this.getSnapClient()
+      await snap.transaction.cancel(orderId)
       return true
     } catch {
       return false
@@ -169,7 +171,8 @@ export class MidtransProvider implements PaymentProvider {
 
   async refundTransaction(orderId: string): Promise<boolean> {
     try {
-      await this.snap.transaction.refund(orderId)
+      const { snap } = await this.getSnapClient()
+      await snap.transaction.refund(orderId)
       return true
     } catch {
       return false
