@@ -345,15 +345,84 @@ query {
 }
 ```
 
-## 15. Webhooks
+## 15. MCP server integration (IDE AI agents)
+
+SaCMS exposes a Model Context Protocol (MCP) server so an AI agent running inside an IDE — Antigravity, VS Code (GitHub Copilot Chat), Cursor, Claude Desktop, Windsurf, Cline — can design, build, populate, and deploy a tenant's schema and content directly from a normal chat session in that IDE, with no separate SaCMS UI open.
+
+```text
+Endpoint: https://your-host/api/mcp
+Auth:     Authorization: Bearer <API_TOKEN>  (or ?token=<API_TOKEN>)
+Transport: Streamable HTTP (MCP 2025-03-26)
+```
+
+Use a `full-access` token from `/dashboard/{tenant}/developer/api-keys` (document 13) — read-only tokens can only use the read-side tools (`list_*`, `get_*`, `query_content`).
+
+### 15.1 Configure in VS Code
+
+VS Code's native MCP support (Copilot Chat, Agent mode) reads `.vscode/mcp.json` in the workspace, or the equivalent entry in user settings:
+
+```json
+{
+  "servers": {
+    "sacms": {
+      "type": "http",
+      "url": "https://your-host/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:sacmsToken}"
+      }
+    }
+  },
+  "inputs": [
+    { "id": "sacmsToken", "type": "promptString", "description": "SaCMS API token", "password": true }
+  ]
+}
+```
+
+Reload the window, then open Copilot Chat in Agent mode — the `sacms` tools appear in the tools picker.
+
+### 15.2 Configure in Antigravity
+
+Antigravity reads MCP servers from its own settings panel (Settings → MCP Servers) or an equivalent `mcp.json`, using the same shape as VS Code/Claude Desktop (`type: "http"`, `url`, `headers`). Point it at the same `/api/mcp` endpoint and Bearer token — there is no SaCMS-specific Antigravity plugin; it is the same generic MCP server every other client above connects to.
+
+### 15.3 Configure in Claude Desktop / Cursor / Windsurf / Cline
+
+Each of these reads its own `mcp.json`/`mcp_config.json` in a client-specific location, but the server entry is the same shape:
+
+```json
+{
+  "mcpServers": {
+    "sacms": {
+      "url": "https://your-host/api/mcp",
+      "headers": { "Authorization": "Bearer cf_your_token" }
+    }
+  }
+}
+```
+
+### 15.4 What the agent can do once connected
+
+Once the IDE's agent has the `sacms` tools available, a normal chat prompt — no special UI, no dedicated panel — can drive the same operations this manual's other sections cover manually:
+
+- Schema: `create_content_type`, `update_content_type`, `delete_content_type`, `create_single_type`, `create_component`, `list_field_types`, `get_full_schema`.
+- Content: `create_content_entry`, `update_content_entry`, `query_content`, `get_content_entry`.
+- Members & webhooks: `create_member`, `list_members`, `create_webhook`, `test_webhook`.
+- Infrastructure & deploy: `deploy_to_vercel`, `get_vercel_deployment_status`, `configure_vercel_domain`, `provision_contabo_vps`, `get_contabo_infrastructure_status`.
+
+The agent still operates strictly within the token's tenant and permission scope — it cannot see or touch another tenant's data, and a read-only token cannot call the `create_*`/`update_*`/`delete_*`/`deploy_*` tools.
+
+### 15.5 Known limitation: no visual panel
+
+MCP is a tool-calling protocol, not a UI framework — connecting the server above gives the IDE's AI agent new things it can *do* via the IDE's own chat interface, not a SaCMS-branded prompt box, live preview pane, or Deploy button rendered inside the IDE. A dedicated visual panel (type a prompt in a custom sidebar, see a live preview, click Deploy) would need a separate VS Code Extension (and a separate Antigravity-specific integration, since MCP config alone cannot add a custom webview) built against SaCMS's existing generate-frontend/deploy APIs — a different, larger project from connecting this MCP server.
+
+## 16. Webhooks
 
 Open `/dashboard/{tenant}/webhooks`.
 
-### 15.1 Async webhook
+### 16.1 Async webhook
 
 Use for notifications such as deployment hooks. Configure URL, events, optional secret, and headers. Main content save does not wait for final delivery. Failures enter the DLQ.
 
-### 15.2 Sync hook
+### 16.2 Sync hook
 
 Use for pre-save policy/integration. A sync hook may:
 
@@ -361,15 +430,15 @@ Use for pre-save policy/integration. A sync hook may:
 - Return `{ "reject": true, "message": "..." }`.
 - Time out/fail, incrementing its circuit-breaker failure count.
 
-### 15.3 Signature verification
+### 16.3 Signature verification
 
 When a secret is configured, verify `X-Webhook-Signature` as HMAC-SHA256 over the exact raw request body. Do not parse and reserialize before signature verification.
 
-### 15.4 DLQ
+### 16.4 DLQ
 
 Inspect dead letters and replay authorized entries from the Webhook UI/API. The cron retry job processes due entries with exponential backoff and eventually marks exhausted messages.
 
-## 16. Billing and subscription
+## 17. Billing and subscription
 
 Open `/dashboard/{tenant}/subscriptions`.
 
@@ -387,7 +456,7 @@ Available tenant operations include plan list, plan change, cancel, proration, i
 
 Never infer payment success only from the browser redirect; use the server/provider transaction status.
 
-## 17. AI authoring
+## 18. AI authoring
 
 When the tenant has `ai-gen` or an Enterprise/Custom plan and the server has `DEEPSEEK_API_KEY`:
 
@@ -398,7 +467,7 @@ When the tenant has `ai-gen` or an Enterprise/Custom plan and the server has `DE
 
 AI cannot bypass required fields or publication permissions. See document 12 for exact API payloads and privacy boundaries.
 
-## 18. White-Label and custom domain
+## 19. White-Label and custom domain
 
 Eligible Pro/Enterprise/Custom workspaces open:
 
@@ -414,14 +483,14 @@ https://cms.example.com/content/articles
 
 Bearer token remains required. See document 13.
 
-## 19. Audit and monitoring
+## 20. Audit and monitoring
 
 - Tenant Audit Trail records supported content/settings/member/security operations.
 - API usage/monitoring pages read `ApiRequest` and metrics records.
 - Sentry reporting appears only when deployment configuration enables it.
 - Audit retention values are plan-dependent; automatic purge must be operated separately.
 
-## 20. Troubleshooting by symptom
+## 21. Troubleshooting by symptom
 
 | Symptom | First check |
 |---|---|
@@ -439,8 +508,11 @@ Bearer token remains required. See document 13.
 | Custom domain verified but not routing | Redis domain mapping; repeat verification |
 | Payment remains pending | Provider dashboard, webhook URL/secret, transaction record |
 | Webhook not delivered | Webhook logs, enabled events, DLQ, retry cron |
+| MCP server not found in IDE | Config file location/syntax for that client, window reload |
+| MCP tools return 401 | Bearer token value/expiry, same check as Public API 401 |
+| MCP write tools unavailable | Token is `read-only` — reissue as `full-access` |
 
-## 21. Safe operating habits
+## 22. Safe operating habits
 
 - Draft first for incomplete or AI-generated content.
 - Use review for high-impact content.
