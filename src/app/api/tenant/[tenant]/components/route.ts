@@ -17,7 +17,7 @@ export const GET = withStaffAuth(async (_request, context, { access }) => {
         { tenants: { some: { tenantId: access.tenantId } } },
       ],
     },
-    include: { fields: { orderBy: { order: "asc" } }, tenants: true },
+    include: { schemaFields: { orderBy: { order: "asc" } }, tenants: true },
     orderBy: { createdAt: "desc" },
   })
 

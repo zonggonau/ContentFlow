@@ -344,32 +344,12 @@ model SingleType {
   isPublished Boolean                      @default(false)
   showInCms   Boolean                      @default(true)
   tenantId    String?
-  fields      SingleTypeField[]
   schemaFields SchemaField[]
   tenant      Tenant?                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tenants     TenantSingleTypeAssignment[]
 
   @@unique([tenantId, slug])
   @@map("single_types")
-}
-
-model SingleTypeField {
-  id           String     @id @default(cuid())
-  singleTypeId String
-  name         String
-  slug         String
-  type         String
-  required     Boolean    @default(false)
-  order        Int        @default(0)
-  jsonPath     String?
-  localizable  Boolean    @default(true)
-  relationSlug String?
-  unique       Boolean    @default(false)
-  options      Json?
-  singleType   SingleType @relation(fields: [singleTypeId], references: [id], onDelete: Cascade)
-
-  @@unique([singleTypeId, slug])
-  @@map("single_type_fields")
 }
 
 model TenantSingleTypeAssignment {
@@ -398,32 +378,12 @@ model Component {
   createdAt   DateTime                    @default(now())
   updatedAt   DateTime                    @updatedAt
   tenantId    String?
-  fields      ComponentField[]
   schemaFields SchemaField[]
   tenant      Tenant?                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   tenants     TenantComponentAssignment[]
 
   @@unique([tenantId, slug])
   @@map("components")
-}
-
-model ComponentField {
-  id           String    @id @default(cuid())
-  componentId  String
-  name         String
-  slug         String
-  type         String
-  required     Boolean   @default(false)
-  order        Int       @default(0)
-  jsonPath     String?
-  localizable  Boolean   @default(true)
-  relationSlug String?
-  unique       Boolean   @default(false)
-  options      Json?
-  component    Component @relation(fields: [componentId], references: [id], onDelete: Cascade)
-
-  @@unique([componentId, slug])
-  @@map("component_fields")
 }
 
 model TenantComponentAssignment {
