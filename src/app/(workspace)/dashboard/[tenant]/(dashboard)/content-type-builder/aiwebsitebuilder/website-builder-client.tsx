@@ -25,6 +25,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import type { DomainBlueprint } from "@/lib/ai/domain-knowledge-types"
+import { SandpackPreview } from "@/components/ai-builder/sandpack-preview"
 
 interface WebsiteBuilderClientProps {
   tenantId: string
@@ -85,6 +86,13 @@ export const AI_MODELS: AiModelOption[] = [
     badge: "Ultra Fast",
     description: "Performa penalaran tinggi dengan kecepatan generasi kilat.",
     credits: 40,
+  },
+  {
+    id: "claude-pro",
+    name: "SaCMS AI Claude",
+    badge: "Anthropic Claude",
+    description: "Ditenagai Claude — kode dihasilkan langsung oleh SaCMS, pratinjau lokal instan (data contoh).",
+    credits: 25,
   },
 ]
 
@@ -173,6 +181,10 @@ export function WebsiteBuilderClient({
   // Project & Draft State
   const [v0ChatId, setV0ChatId] = useState(initialProject?.v0ChatId || null)
   const [previewUrl, setPreviewUrl] = useState(initialProject?.previewUrl || "")
+  // Claude builds have no hosted sandbox/preview URL — they're rendered
+  // in-browser via Sandpack using the generated files directly (mock data,
+  // not a live server — see components/ai-builder/sandpack-preview.tsx).
+  const isClaudeBuild = typeof v0ChatId === "string" && v0ChatId.startsWith("sacms_claude_")
   const [projectStatus, setProjectStatus] = useState<"draft" | "project">(initialProject?.status || "draft")
   const [deviceMode, setDeviceMode] = useState<"desktop" | "tablet" | "mobile">("desktop")
   // Bumped to force a real iframe remount on Refresh — a URL hash change alone
@@ -419,7 +431,10 @@ export async function fetchContent(collection: string) {
       // this is the local fallback — v0Error carries the real reason (e.g.
       // "You are out of credits") when v0 itself reported one.
       const usedLocalFallback = typeof data.v0ChatId === "string" && data.v0ChatId.startsWith("sacms_gen_")
-      if (data.files && Array.isArray(data.files) && data.files.length > 0) {
+      const usedClaude = typeof data.v0ChatId === "string" && data.v0ChatId.startsWith("sacms_claude_")
+      const claudeFailed = usedClaude && (!data.files || data.files.length === 0)
+      const hasFiles = data.files && Array.isArray(data.files) && data.files.length > 0
+      if (hasFiles) {
         setGeneratedFiles(data.files)
       }
 
@@ -438,8 +453,12 @@ export async function fetchContent(collection: string) {
         ...prev,
         usedLocalFallback
           ? { id: Date.now().toString(), time: new Date().toLocaleTimeString(), type: "warn", text: `[Build] AI Engine gagal terhubung ke v0: ${data.v0Error || "alasan tidak diketahui"}. Menampilkan template contoh lokal.` }
+          : claudeFailed
+          ? { id: Date.now().toString(), time: new Date().toLocaleTimeString(), type: "warn", text: `[Build] Claude gagal men-generate kode: ${data.v0Error || "alasan tidak diketahui"}.` }
           : isStillGenerating
           ? { id: Date.now().toString(), time: new Date().toLocaleTimeString(), type: "info", text: `[Build] AI Engine masih menyusun kode untuk "${prompt.substring(0, 30)}..." — buka tab Preview untuk memantau progres.` }
+          : usedClaude
+          ? { id: Date.now().toString(), time: new Date().toLocaleTimeString(), type: "success", text: `[Build] Claude generated Next.js App Router application for ${prompt.substring(0, 30)}... — rendered in Sandpack.` }
           : { id: Date.now().toString(), time: new Date().toLocaleTimeString(), type: "success", text: `[Build] Generated Next.js 16 App Router application for ${prompt.substring(0, 30)}...` }
       ])
 
@@ -450,10 +469,20 @@ export async function fetchContent(collection: string) {
               role: 'ai',
               content: `⚠️ **AI Engine Tidak Dapat Membangun Website**\n\n1. **SaCMS MCP Engine:** Skema database Content Types dan mock entri data otomatis dibuat di database PostgreSQL.\n2. **SaCMS AI Studio:** Gagal terhubung ke layanan AI Engine${data.v0Error ? ` — *${data.v0Error}*` : ""}. Tab **Preview** menampilkan template contoh lokal, bukan hasil generate AI sesungguhnya.\n\nSilakan hubungi administrator platform untuk memeriksa konfigurasi/kuota AI Engine, lalu coba generate ulang.`
             }
+          : claudeFailed
+          ? {
+              role: 'ai',
+              content: `⚠️ **Claude Gagal Membangun Frontend**\n\n1. **SaCMS MCP Engine:** Skema database Content Types berhasil dibuat.\n2. **SaCMS AI Claude:** Gagal men-generate kode frontend${data.v0Error ? ` — *${data.v0Error}*` : ""}. Periksa konfigurasi Anthropic API Key di Pengaturan Platform, lalu coba generate ulang.`
+            }
           : isStillGenerating
           ? {
               role: 'ai',
               content: `⏳ **Skema Database Selesai — Website Sedang Dibangun AI**\n\n1. **SaCMS MCP Engine:** Skema database Content Types dan mock entri data otomatis dibuat di database PostgreSQL.\n2. **SaCMS AI Studio (${currentModelConfig.name}):** Kode frontend sedang di-generate. Untuk build yang kompleks ini bisa memakan waktu 1-2 menit.\n\nBuka tab **Preview** untuk memantau progres secara live — halaman akan otomatis refresh begitu selesai.`
+            }
+          : usedClaude
+          ? {
+              role: 'ai',
+              content: `✅ **Website & Skema Database Berhasil Dibangun (Claude)!**\n\n1. **SaCMS MCP Engine:** Skema database Content Types dan mock entri data otomatis dibuat di database PostgreSQL.\n2. **SaCMS AI Claude:** Kode frontend Next.js App Router telah selesai di-generate oleh Claude.\n\n⚠️ Tab **Preview** menampilkan pratinjau lokal (Sandpack) dengan data contoh — belum terhubung ke Content API secara live dan belum di-deploy. Gunakan tab **Code** untuk melihat kode lengkap, atau **Deploy** untuk mempublikasikannya secara live.`
             }
           : {
               role: 'ai',
@@ -468,10 +497,21 @@ export async function fetchContent(collection: string) {
               title: "AI Engine Gagal Terhubung",
               description: data.v0Error || "Layanan AI Engine tidak dapat diakses. Menampilkan template contoh lokal.",
             }
+          : claudeFailed
+          ? {
+              variant: "destructive",
+              title: "Claude Gagal Membangun Frontend",
+              description: data.v0Error || "Periksa konfigurasi Anthropic API Key di Pengaturan Platform.",
+            }
           : isStillGenerating
           ? {
               title: "AI Sedang Membangun Website...",
               description: "Skema database sudah siap. Kode frontend masih di-generate — pantau progresnya di tab Preview.",
+            }
+          : usedClaude
+          ? {
+              title: "Website Berhasil Dibangun (Claude)!",
+              description: "Pratinjau lokal (data contoh) siap di tab Preview. Deploy untuk terhubung live ke database SaCMS.",
             }
           : {
               title: "Website Berhasil Dibangun!",
@@ -608,10 +648,15 @@ export async function fetchContent(collection: string) {
       const res = await fetch(`/api/tenant/${tenantSlug}/ai-builder/deploy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          action: "deploy", 
+        body: JSON.stringify({
+          action: "deploy",
           target: isVps ? "vps" : "auto",
-          chatId: v0ChatId 
+          chatId: v0ChatId,
+          // Without this the deploy route falls back to a generic starter
+          // page, silently discarding the actual generated site — matters
+          // for every build, but especially for Claude builds, which have
+          // no v0-hosted project of their own to deploy from.
+          files: generatedFiles,
         })
       })
 
@@ -1324,11 +1369,13 @@ export async function fetchContent(collection: string) {
                     <div className="flex-1 flex items-center gap-2 bg-muted rounded-full px-3 py-1.5 text-[11px] font-mono text-muted-foreground min-w-0">
                       <ChevronDown className="h-3 w-3 rotate-90 shrink-0 opacity-50" />
                       <ChevronDown className="h-3 w-3 -rotate-90 shrink-0 opacity-50" />
-                      <span className="truncate flex-1">{previewUrl || "https://sandbox.sacms.cloud"}</span>
+                      <span className="truncate flex-1">
+                        {isClaudeBuild ? "Sandpack — pratinjau lokal (data contoh, belum live)" : (previewUrl || "https://sandbox.sacms.cloud")}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-0.5 shrink-0">
-                      {previewUrl && (
+                      {!isClaudeBuild && previewUrl && (
                         <Button variant="ghost" size="icon" asChild className="h-7 w-7 rounded-full text-muted-foreground">
                           <a href={previewUrl} target="_blank" rel="noopener noreferrer" title="Buka di tab baru">
                             <ExternalLink className="h-3.5 w-3.5" />
@@ -1352,7 +1399,9 @@ export async function fetchContent(collection: string) {
                     <div className={`h-full rounded-xl overflow-hidden border border-border/80 shadow-xs bg-background flex flex-col transition-all duration-300 ${
                       deviceMode === "desktop" ? "w-full" : deviceMode === "tablet" ? "w-[768px] max-w-full" : "w-[375px] max-w-full"
                     }`}>
-                      {previewUrl ? (
+                      {isClaudeBuild && generatedFiles.length > 0 ? (
+                        <SandpackPreview key={previewRefreshNonce} files={generatedFiles} />
+                      ) : previewUrl ? (
                         <iframe
                           key={previewRefreshNonce}
                           src={previewUrl}

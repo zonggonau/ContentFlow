@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server"
 import { db, getTenantDb } from "@/lib/database"
 import { createV0Chat, getV0Preview } from "@/lib/v0-client"
+import { createClaudeChat } from "@/lib/claude-builder-client"
 import { deployToVercel } from "@/lib/vercel-client"
 import { randomBytes, createHash } from "crypto"
 import { McpClientBridge } from "@/lib/mcp/mcp-client-bridge"
 import { withStaffAuth, apiError } from "@/lib/api/route-helpers"
+
+const isClaudeModel = (model: string) => model.startsWith("claude-")
 
 export const POST = withStaffAuth(
   async (req, _context, { access, session }) => {
@@ -28,6 +31,9 @@ export const POST = withStaffAuth(
       "v0-pro": 25,
       "v0-max": 35,
       "v0-max-fast": 40,
+      "claude-mini": 15,
+      "claude-pro": 25,
+      "claude-max": 35,
     }
     const creditCost = MODEL_CREDIT_MAP[model] || 25
 
@@ -145,30 +151,39 @@ CRITICAL ARCHITECTURE & UI REQUIREMENTS:
 
 Initialize all components with rich fallback sample data so the live sandbox preview renders instantly with zero blank states.`
 
-    // 6. Generate frontend with AI Engine
-    const v0Result = await createV0Chat(superPrompt, model)
-    if (!v0Result?.chatId) throw new Error("Failed to generate frontend with AI Engine")
+    // 6. Generate frontend with AI Engine (v0.dev, or Claude via SaCMS's own
+    // generation pipeline — see lib/claude-builder-client.ts). Both resolve
+    // to the same { chatId, files, previewUrl, generating?, ...Error? }
+    // shape so everything below (deploy, Site sync, settings) is identical.
+    const usingClaude = isClaudeModel(model)
+    const genResult = usingClaude
+      ? await createClaudeChat(superPrompt, model, tenant.id, session.user.id)
+      : await createV0Chat(superPrompt, model)
+    if (!genResult?.chatId) throw new Error("Failed to generate frontend with AI Engine")
+    const engineError = usingClaude ? (genResult as any).claudeError : (genResult as any).v0Error
 
     // Deduct user credits after successful chat creation
     await deductUserAiCredits(session.user.id, creditCost, "generate_frontend", tenant.id, model)
-    
+
     // 5. Save to settings
-    await db.setting.upsert({ where: { key: `${tenant.id}_v0ChatId` }, update: { value: v0Result.chatId }, create: { tenantId: tenant.id, key: `${tenant.id}_v0ChatId`, value: v0Result.chatId } })
+    await db.setting.upsert({ where: { key: `${tenant.id}_v0ChatId` }, update: { value: genResult.chatId }, create: { tenantId: tenant.id, key: `${tenant.id}_v0ChatId`, value: genResult.chatId } })
     await db.setting.upsert({ where: { key: `${tenant.id}_v0FrontendPrompt` }, update: { value: prompt }, create: { tenantId: tenant.id, key: `${tenant.id}_v0FrontendPrompt`, value: prompt } })
     await db.setting.upsert({ where: { key: `${tenant.id}_v0Model` }, update: { value: model }, create: { tenantId: tenant.id, key: `${tenant.id}_v0Model`, value: model } })
 
-    // 6. Optionally deploy to Vercel immediately
+    // 6. Optionally deploy to Vercel immediately. Claude builds have no
+    // hosted v0 sandbox to fall back on — they're previewed in-browser via
+    // Sandpack (mock data, not a live server) unless explicitly deployed.
     let deploymentUrl = ""
     let vercelProjectId = ""
     let previewUrl = ""
-    
-    if (deployToVercelAfter && v0Result.files && v0Result.files.length > 0) {
+
+    if (deployToVercelAfter && genResult.files && genResult.files.length > 0) {
       try {
         const projectName = `sacms-${tenant.slug}-frontend`
-        const deployment = await deployToVercel(projectName, v0Result.files)
+        const deployment = await deployToVercel(projectName, genResult.files)
         deploymentUrl = deployment.url
         vercelProjectId = deployment.projectId || ""
-        
+
         if (deploymentUrl) {
           previewUrl = deploymentUrl
           await db.setting.upsert({ where: { key: `${tenant.id}_v0PreviewUrl` }, update: { value: deploymentUrl }, create: { tenantId: tenant.id, key: `${tenant.id}_v0PreviewUrl`, value: deploymentUrl } })
@@ -180,11 +195,15 @@ Initialize all components with rich fallback sample data so the live sandbox pre
         console.error("Vercel deploy failed:", deployError.message)
       }
     }
-    
-    // If not deployed to Vercel, use our local proxy route to securely embed the V0 preview
+
     if (!previewUrl) {
-      previewUrl = `/api/tenant/${tenant.slug}/ai-builder/preview/${v0Result.chatId}`
-      await db.setting.upsert({ where: { key: `${tenant.id}_v0PreviewUrl` }, update: { value: previewUrl }, create: { tenantId: tenant.id, key: `${tenant.id}_v0PreviewUrl`, value: previewUrl } })
+      // Claude builds: no hosted preview exists — the builder UI renders
+      // `files` directly in an in-browser Sandpack sandbox instead of
+      // hitting a proxy route. v0 builds: proxy v0's own hosted preview.
+      previewUrl = usingClaude ? "" : `/api/tenant/${tenant.slug}/ai-builder/preview/${genResult.chatId}`
+      if (previewUrl) {
+        await db.setting.upsert({ where: { key: `${tenant.id}_v0PreviewUrl` }, update: { value: previewUrl }, create: { tenantId: tenant.id, key: `${tenant.id}_v0PreviewUrl`, value: previewUrl } })
+      }
     }
 
     // Sync with Site & SiteFile database models
@@ -205,8 +224,8 @@ Initialize all components with rich fallback sample data so the live sandbox pre
         })
       }
 
-      if (v0Result.files && v0Result.files.length > 0) {
-        for (const vf of v0Result.files) {
+      if (genResult.files && genResult.files.length > 0) {
+        for (const vf of genResult.files) {
           const filePath = vf.name.startsWith("app/") || vf.name.startsWith("components/") || vf.name.startsWith("lib/") ? vf.name : `app/${vf.name}`
           await db.siteFile.upsert({
             where: { siteId_path: { siteId: site.id, path: filePath } },
@@ -221,20 +240,23 @@ Initialize all components with rich fallback sample data so the live sandbox pre
 
     return NextResponse.json({
       success: true,
-      v0ChatId: v0Result.chatId,
+      v0ChatId: genResult.chatId,
       previewUrl,
       vercelProjectId,
-      filesGenerated: v0Result.files?.length || 0,
-      files: v0Result.files || [],
+      filesGenerated: genResult.files?.length || 0,
+      files: genResult.files || [],
       // True when v0 accepted the chat but hasn't streamed files back yet —
       // the client should show a "sedang membangun" state and poll, not an
-      // empty/broken one.
-      generating: v0Result.generating === true,
-      // Set only when v0's cloud API itself failed/errored (e.g. the v0.app
-      // account is out of credits) and generation fell back to local demo
-      // content — the client should surface this honestly rather than
-      // implying a real AI build succeeded.
-      v0Error: v0Result.v0Error,
+      // empty/broken one. Claude builds never hit this — generation is
+      // synchronous, so files (if any) are always present by the time this
+      // responds.
+      generating: (genResult as any).generating === true,
+      // Set when the cloud engine itself failed/errored (e.g. the v0.app
+      // account is out of credits, or Claude's API call failed) and
+      // generation produced no usable files — the client should surface
+      // this honestly rather than implying a real AI build succeeded.
+      v0Error: engineError,
+      usingClaude,
     })
   },
   { minRole: "admin" },

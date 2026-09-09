@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/database"
 import { deleteV0Chat } from "@/lib/v0-client"
+import { deleteClaudeChat } from "@/lib/claude-builder-client"
 import { withStaffAuth } from "@/lib/api/route-helpers"
 
 export const POST = withStaffAuth(
@@ -12,9 +13,13 @@ export const POST = withStaffAuth(
 
     if (v0ChatId) {
       try {
-        await deleteV0Chat(v0ChatId)
+        if (v0ChatId.startsWith("sacms_claude_")) {
+          await deleteClaudeChat(v0ChatId)
+        } else {
+          await deleteV0Chat(v0ChatId)
+        }
       } catch (err: any) {
-        console.warn("Could not delete v0 chat:", err.message)
+        console.warn("Could not delete chat:", err.message)
       }
     }
 
