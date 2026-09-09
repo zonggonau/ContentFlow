@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import {
-  Database, FileText, ImageIcon, Users, Plus, PenTool,
+  Database, FileText, ImageIcon, Users, UserCheck, Plus, PenTool,
   AlertTriangle, Clock, CheckCircle2, Archive, CalendarClock,
   Eye, Key, Globe, XCircle, ArrowRight, Webhook, Activity,
   Zap, Upload, Play, BookOpen, ClipboardList, TrendingUp,
@@ -44,6 +44,7 @@ interface TenantStats {
   totalEntries: number
   mediaCount: number
   memberCount: number
+  appMemberCount?: number
   apiTokenCount: number
   webhookCount: number
   entries: {
@@ -285,10 +286,11 @@ export default function TenantDashboardClient({
       )}
 
       {/* Quick Stats KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {[
           { label: "Aset Media", value: stats?.mediaCount ?? 0, icon: ImageIcon, color: "text-blue-500", bg: "bg-blue-500/10", href: `/dashboard/${tenantId}/media` },
           { label: "Anggota Tim", value: stats?.memberCount ?? 1, icon: Users, color: "text-purple-500", bg: "bg-purple-500/10", href: `/dashboard/${tenantId}/users` },
+          { label: "Member Aplikasi", value: stats?.appMemberCount ?? 0, icon: UserCheck, color: "text-indigo-500", bg: "bg-indigo-500/10", href: `/dashboard/${tenantId}/users-permissions/members` },
           { label: "Webhook Aktif", value: stats?.webhookCount ?? 0, icon: Webhook, color: "text-amber-500", bg: "bg-amber-500/10", href: `/dashboard/${tenantId}/developer/webhooks` },
           { label: "API Token", value: stats?.apiTokenCount ?? 0, icon: Key, color: "text-emerald-500", bg: "bg-emerald-500/10", href: `/dashboard/${tenantId}/developer/api-keys` },
         ].map((kpi) => (

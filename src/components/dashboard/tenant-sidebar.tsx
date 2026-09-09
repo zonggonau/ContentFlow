@@ -38,6 +38,8 @@ import {
   Server,
   Lock,
   Headphones,
+  UserCheck,
+  ShieldCheck,
 } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useState, useEffect, useMemo } from "react"
@@ -55,6 +57,8 @@ const s = {
   mediaLibrary: "Media Library",
   support: "Support & Help Desk",
   teamMembers: "Team Members",
+  appMembers: "End-User Members",
+  memberRoles: "Member Roles & Access",
   auditLog: "Activity Log",
   subscriptions: "Plans & Billing",
   customDomains: "Custom Domains",
@@ -234,7 +238,11 @@ export function TenantSidebar({ tenantId: propId, tenantSlug, tenants, isEnterpr
           matchPrefix: true,
           badge: unreadSupportCount > 0 ? `${unreadSupportCount} ${s.badgeNew}` : undefined
         },
-        ...(isAdmin ? [{ title: s.teamMembers, href: "/users", icon: Users }] : []),
+        ...(isAdmin ? [
+          { title: s.teamMembers, href: "/users", icon: Users },
+          { title: s.appMembers, href: "/users-permissions/members", icon: UserCheck, matchPrefix: true },
+          { title: s.memberRoles, href: "/users-permissions/roles", icon: ShieldCheck, matchPrefix: true },
+        ] : []),
         ...(isAdmin || isEditor ? [{ title: s.auditLog, href: "/system/audit", icon: ClipboardList }] : []),
         ...(isAdmin && !isEnterpriseMode ? [{
           title: s.subscriptions,

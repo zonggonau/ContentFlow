@@ -67,6 +67,7 @@ export default async function TenantDashboardPage({
     webhookCount,
     recentEntries,
     superAdmins,
+    appMemberCount,
   ] = await Promise.all([
     tenantDb.tenant.findUnique({
       where: { id: tenantId },
@@ -94,7 +95,8 @@ export default async function TenantDashboardPage({
       orderBy: { updatedAt: "desc" },
       take: 20,
     }).catch(() => []),
-    db.user.findMany({ where: { role: "super_admin" }, select: { id: true } }).catch(() => [])
+    db.user.findMany({ where: { role: "super_admin" }, select: { id: true } }).catch(() => []),
+    tenantDb.member.count({ where: { tenantId } }).catch(() => 0),
   ])
 
   const superAdminIds = new Set((superAdmins || []).map(u => u.id))
@@ -115,6 +117,7 @@ export default async function TenantDashboardPage({
     totalEntries: Number(totalEntries) || 0,
     mediaCount: tenantData?._count?.media || 0,
     memberCount: tenantData?._count?.members || 0,
+    appMemberCount: appMemberCount || 0,
     apiTokenCount: apiTokenCount || 0,
     webhookCount: webhookCount || 0,
     entries: {
