@@ -7,6 +7,7 @@ import { getTenantAccess } from "@/lib/tenant-access"
 import { RolesClient } from "./roles-client"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ensureSystemRoles } from "@/lib/permissions-engine"
+import { EXCLUDE_PLATFORM_CONTENT_TYPES } from "@/lib/platform-content-types"
 import { Metadata } from "next"
 
 export const metadata: Metadata = { title: "Roles & Permissions" }
@@ -38,6 +39,7 @@ export default async function RolesPage({ params }: { params: Promise<{ tenant: 
     db.contentType.findMany({
       where: {
         OR: [{ tenantId: access.tenantId }, { tenantId: null }],
+        ...EXCLUDE_PLATFORM_CONTENT_TYPES,
       },
       select: { id: true, name: true, slug: true },
       orderBy: { name: "asc" },

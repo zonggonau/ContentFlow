@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { db } from "@/lib/database"
 import { withStaffAuth } from "@/lib/api/route-helpers"
+import { EXCLUDE_PLATFORM_CONTENT_TYPES } from "@/lib/platform-content-types"
 
 export const GET = withStaffAuth(async (_request, context, { access }) => {
     const { tenant: tenantSlug } = await context.params
@@ -8,7 +9,10 @@ export const GET = withStaffAuth(async (_request, context, { access }) => {
     // 1. Fetch all tenant structures
     const [contentTypesRaw, singleTypesRaw] = await Promise.all([
       db.contentType.findMany({
-        where: { OR: [{ tenantId: access.tenantId }, { tenantId: null }] },
+        where: {
+          OR: [{ tenantId: access.tenantId }, { tenantId: null }],
+          ...EXCLUDE_PLATFORM_CONTENT_TYPES,
+        },
         include: { schemaFields: true }
       }),
       db.singleType.findMany({
