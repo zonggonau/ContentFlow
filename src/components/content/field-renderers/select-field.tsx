@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -10,11 +10,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
+import { normalizeSelectOptions, type SelectOption } from "@/lib/select-options"
 
-interface SelectOption {
-  label: string
-  value: string
-}
+export type { SelectOption }
 
 interface SelectFieldProps {
   value: string
@@ -23,7 +21,7 @@ interface SelectFieldProps {
   placeholder?: string
   required?: boolean
   error?: string
-  options?: (string | SelectOption)[]
+  options?: any
   jsonPath?: string // Path to fetch JSON data (e.g., "/api/categories")
   tenantSlug?: string // For API calls
 }
@@ -39,12 +37,13 @@ export function SelectField({
   jsonPath,
   tenantSlug,
 }: SelectFieldProps) {
-  const [dynamicOptions, setDynamicOptions] = useState<(string | SelectOption)[]>(options)
+  const initialNormalized = useMemo(() => normalizeSelectOptions(options), [options])
+  const [dynamicOptions, setDynamicOptions] = useState<SelectOption[]>(initialNormalized)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!jsonPath || !tenantSlug) {
-      setDynamicOptions(options)
+      setDynamicOptions(normalizeSelectOptions(options))
       return
     }
 
@@ -54,26 +53,13 @@ export function SelectField({
         const response = await fetch(jsonPath)
         if (response.ok) {
           const data = await response.json()
-          // Handle different data formats
-          const opts = Array.isArray(data) ? data : data.options || []
-          
-          // Normalize options to handle objects from API
-          const normalizedOpts = opts.map((opt: any) => {
-            if (typeof opt === 'string') return opt
-            if (typeof opt === 'object' && opt !== null) {
-              return {
-                label: opt.label || opt.name || opt.title || String(Object.values(opt)[0]),
-                value: String(opt.value || opt.id || opt.slug || Object.values(opt)[0])
-              }
-            }
-            return String(opt)
-          })
-          
-          setDynamicOptions(normalizedOpts)
+          setDynamicOptions(normalizeSelectOptions(data))
+        } else {
+          setDynamicOptions(normalizeSelectOptions(options))
         }
       } catch (error) {
         console.error("Error fetching options:", error)
-        setDynamicOptions(options) // Fallback to static options
+        setDynamicOptions(normalizeSelectOptions(options))
       } finally {
         setLoading(false)
       }
@@ -81,6 +67,8 @@ export function SelectField({
 
     fetchOptions()
   }, [jsonPath, tenantSlug, options])
+
+  const safeOptions = Array.isArray(dynamicOptions) ? dynamicOptions : normalizeSelectOptions(dynamicOptions)
 
   return (
     <div className="space-y-2">
@@ -90,7 +78,7 @@ export function SelectField({
           {required && <span className="text-destructive ml-1">*</span>}
         </Label>
       )}
-      <Select value={value} onValueChange={onChange} disabled={loading}>
+      <Select value={value || ""} onValueChange={onChange} disabled={loading}>
         <SelectTrigger className={error ? "border-destructive" : ""}>
           {loading ? (
             <div className="flex items-center gap-2">
@@ -102,15 +90,15 @@ export function SelectField({
           )}
         </SelectTrigger>
         <SelectContent>
-          {dynamicOptions.length === 0 ? (
+          {safeOptions.length === 0 ? (
             <SelectItem value="no-options" disabled>
               No options available
             </SelectItem>
           ) : (
-            dynamicOptions.map((option, index) => {
-              const optLabel = typeof option === 'string' ? option : option.label
-              const optValue = typeof option === 'string' ? option : option.value
-              const optKey = typeof option === 'string' ? `opt-${index}-${option}` : `opt-${index}-${option.value}`
+            safeOptions.map((option, index) => {
+              const optLabel = option.label
+              const optValue = option.value || `opt-${index}`
+              const optKey = `opt-${index}-${optValue}`
               
               return (
                 <SelectItem key={optKey} value={optValue}>
@@ -125,3 +113,4 @@ export function SelectField({
     </div>
   )
 }
+

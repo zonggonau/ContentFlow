@@ -327,13 +327,13 @@ export default function CMSCreateEntryClient({
         return <div className="space-y-1.5">{renderLabelWithAI()}<ValidationField value={value as string} onChange={v => handleFieldChange(field.slug, v)} required={field.required} type="uid" /></div>
 
       case "select":
-        return <div className="space-y-1.5">{renderLabelWithAI()}<SelectField value={value as string} onChange={v => handleFieldChange(field.slug, v)} options={field.options?.options || field.options || []} required={field.required} /></div>
+        return <div className="space-y-1.5">{renderLabelWithAI()}<SelectField value={value as string} onChange={v => handleFieldChange(field.slug, v)} options={field.options?.choices || field.options?.options || field.options || []} required={field.required} /></div>
 
       case "multiselect":
-        return <div className="space-y-1.5">{renderLabelWithAI()}<MultiSelectField value={value as string[]} onChange={v => handleFieldChange(field.slug, v)} options={field.options?.options || field.options || []} required={field.required} /></div>
+        return <div className="space-y-1.5">{renderLabelWithAI()}<MultiSelectField value={value as string[]} onChange={v => handleFieldChange(field.slug, v)} options={field.options?.choices || field.options?.options || field.options || []} required={field.required} /></div>
 
       case "tags":
-        return <div className="space-y-1.5">{renderLabelWithAI()}<TagsField value={value as string[]} onChange={v => handleFieldChange(field.slug, v)} /></div>
+        return <div className="space-y-1.5">{renderLabelWithAI()}<TagsField value={Array.isArray(value) ? value : (typeof value === 'string' && value ? [value] : [])} onChange={v => handleFieldChange(field.slug, v)} /></div>
 
       case "media":
         return <div className="space-y-1.5">{renderLabelWithAI()}<MediaField value={value as any} onChange={v => handleFieldChange(field.slug, v)} tenantSlug={tenantSlug} type="image" /></div>
@@ -342,7 +342,8 @@ export default function CMSCreateEntryClient({
         return <div className="space-y-1.5">{renderLabelWithAI()}<MediaField value={value as any} onChange={v => handleFieldChange(field.slug, v)} tenantSlug={tenantSlug} type="file" /></div>
 
       case "mediaMultiple":
-        return <div className="space-y-1.5">{renderLabelWithAI()}<MediaMultipleField value={value as any} onChange={v => handleFieldChange(field.slug, v)} tenantSlug={tenantSlug} /></div>
+        return <div className="space-y-1.5">{renderLabelWithAI()}<MediaMultipleField value={Array.isArray(value) ? value : []} onChange={v => handleFieldChange(field.slug, v)} tenantSlug={tenantSlug} /></div>
+
 
       case "relation": {
         const isMultiple = field.options?.relationType === "oneToMany" || 

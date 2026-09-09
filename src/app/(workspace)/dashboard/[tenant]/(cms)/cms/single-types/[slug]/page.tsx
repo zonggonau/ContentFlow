@@ -195,9 +195,7 @@ export default function CMSSingleTypeDetailPage() {
         return <div className="space-y-1.5">{renderLabelWithAI()}<ValidationField value={value as string || ""} onChange={v => handleFieldChange(field.slug, v)} required={field.required} type="uid" /></div>
 
       case "select":
-        let opts: string[] = []
-        try { opts = typeof field.options === 'string' ? JSON.parse(field.options) : (field.options?.options || []) } catch { opts = [] }
-        return <div className="space-y-1.5">{renderLabelWithAI()}<SelectField label="" options={opts} value={value as string || ""} onChange={v => handleFieldChange(field.slug, v)} required={field.required} /></div>
+        return <div className="space-y-1.5">{renderLabelWithAI()}<SelectField label="" options={field.options} value={value as string || ""} onChange={v => handleFieldChange(field.slug, v)} required={field.required} /></div>
 
       case "tags":
         return <div className="space-y-1.5">{renderLabelWithAI()}<TagsField value={Array.isArray(value) ? value : []} onChange={v => handleFieldChange(field.slug, v)} /></div>

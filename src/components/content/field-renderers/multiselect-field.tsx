@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, KeyboardEvent } from "react"
+import { useState, useMemo } from "react"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -11,6 +11,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { normalizeSelectOptions, type SelectOption } from "@/lib/select-options"
 
 interface MultiSelectFieldProps {
   value: string[] | string | null
@@ -19,7 +20,7 @@ interface MultiSelectFieldProps {
   placeholder?: string
   required?: boolean
   error?: string
-  options?: string[]
+  options?: any
 }
 
 export function MultiSelectField({
@@ -34,28 +35,32 @@ export function MultiSelectField({
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState("")
 
+  const normalizedOptions = useMemo(() => normalizeSelectOptions(options), [options])
+
   // Normalize value to array
   const selected: string[] = Array.isArray(value)
-    ? value
+    ? value.map(v => String(v))
     : typeof value === "string" && value.trim()
       ? value.split(",").map(v => v.trim()).filter(Boolean)
       : []
 
-  const filteredOptions = options.filter(
-    (opt) => opt.toLowerCase().includes(search.toLowerCase())
+  const filteredOptions = normalizedOptions.filter(
+    (opt) => 
+      opt.label.toLowerCase().includes(search.toLowerCase()) || 
+      opt.value.toLowerCase().includes(search.toLowerCase())
   )
 
-  const toggleOption = (opt: string) => {
-    if (selected.includes(opt)) {
-      onChange(selected.filter(v => v !== opt))
+  const toggleOption = (optValue: string) => {
+    if (selected.includes(optValue)) {
+      onChange(selected.filter(v => v !== optValue))
     } else {
-      onChange([...selected, opt])
+      onChange([...selected, optValue])
     }
   }
 
-  const removeOption = (opt: string, e?: React.MouseEvent) => {
+  const removeOption = (optValue: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    onChange(selected.filter(v => v !== opt))
+    onChange(selected.filter(v => v !== optValue))
   }
 
   const clearAll = (e: React.MouseEvent) => {
@@ -88,22 +93,26 @@ export function MultiSelectField({
               {selected.length === 0 ? (
                 <span className="text-muted-foreground">{placeholder}</span>
               ) : (
-                selected.map((opt) => (
-                  <Badge
-                    key={opt}
-                    variant="secondary"
-                    className="px-2 py-0.5 h-6 rounded-sm bg-primary/10 text-primary hover:bg-primary/20 border-none flex items-center gap-1 text-[11px] font-bold"
-                  >
-                    {opt}
-                    <button
-                      type="button"
-                      onClick={(e) => removeOption(opt, e)}
-                      className="ml-0.5 rounded-sm hover:bg-primary/20 p-0.5"
+                selected.map((val) => {
+                  const matched = normalizedOptions.find(o => o.value === val)
+                  const displayLabel = matched ? matched.label : val
+                  return (
+                    <Badge
+                      key={val}
+                      variant="secondary"
+                      className="px-2 py-0.5 h-6 rounded-sm bg-primary/10 text-primary hover:bg-primary/20 border-none flex items-center gap-1 text-[11px] font-bold"
                     >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))
+                      {displayLabel}
+                      <button
+                        type="button"
+                        onClick={(e) => removeOption(val, e)}
+                        className="ml-0.5 rounded-sm hover:bg-primary/20 p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  )
+                })
               )}
             </div>
             <div className="flex items-center gap-1 ml-2 shrink-0">
@@ -142,12 +151,12 @@ export function MultiSelectField({
               </div>
             ) : (
               filteredOptions.map((opt) => {
-                const isSelected = selected.includes(opt)
+                const isSelected = selected.includes(opt.value)
                 return (
                   <button
-                    key={opt}
+                    key={opt.value}
                     type="button"
-                    onClick={() => toggleOption(opt)}
+                    onClick={() => toggleOption(opt.value)}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-sm px-3 py-2.5 text-sm cursor-pointer transition-colors",
                       isSelected
@@ -163,7 +172,7 @@ export function MultiSelectField({
                     )}>
                       {isSelected && <Check className="h-3 w-3 text-white" />}
                     </div>
-                    <span>{opt}</span>
+                    <span>{opt.label}</span>
                   </button>
                 )
               })
@@ -182,3 +191,4 @@ export function MultiSelectField({
     </div>
   )
 }
+

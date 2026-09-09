@@ -197,7 +197,7 @@ export default function SingleTypeDetailClient({
       case "timestamp":
         return <DateTimeField value={value as string} onChange={v => handleFieldChange(field.slug, v)} required={field.required} type={field.type as any} />
       case "select": 
-        return <SelectField value={value as string} onChange={v => handleFieldChange(field.slug, v)} options={options} required={field.required} />
+        return <SelectField value={value as string} onChange={v => handleFieldChange(field.slug, v)} options={field.options} required={field.required} />
       case "media": 
         return <MediaField value={value as string} onChange={v => handleFieldChange(field.slug, v)} tenantSlug={tenantSlug} type="image" />
       case "file":

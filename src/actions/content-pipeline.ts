@@ -34,6 +34,14 @@ export function parseSchemaFieldOptions(schemaFields: any[] = []) {
       return { ...f, relationSlug: relSlug, showInCms, options: safeOpts }
     }
 
+    // Normalize select & multiselect options so choices & options are always accessible
+    if (f.type === "select" || f.type === "multiselect") {
+      const rawChoices = safeOpts.choices || safeOpts.options || safeOpts.enum || []
+      safeOpts.choices = rawChoices
+      safeOpts.options = rawChoices
+      return { ...f, showInCms, options: safeOpts }
+    }
+
     return { ...f, showInCms, options: safeOpts }
   })
 }

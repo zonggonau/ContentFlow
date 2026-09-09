@@ -17,6 +17,7 @@ import { DateTimeField } from "./datetime-field"
 import { BooleanField } from "./boolean-field"
 import { DateField } from "./date-field"
 import { SelectField } from "./select-field"
+import { normalizeSelectOptions } from "@/lib/select-options"
 import { MediaField } from "./media-field"
 import { SlugField } from "./slug-field"
 import { RichTextField } from "./rich-text-field"
@@ -132,11 +133,9 @@ export function ComponentField({
     const fieldValue = data?.[field.slug]
     const onFieldChange = (val: any) => handleFieldChange(index, field.slug, val)
 
-    let selectOptions: string[] = []
+    let selectOptions: any[] = []
     if (field.options) {
-      const opts = typeof field.options === 'string' ? JSON.parse(field.options) : field.options
-      if (Array.isArray(opts)) selectOptions = opts
-      else if (typeof opts === 'string') selectOptions = opts.split(",").map(o => o.trim())
+      selectOptions = normalizeSelectOptions(field.options)
     }
 
     switch (field.type) {

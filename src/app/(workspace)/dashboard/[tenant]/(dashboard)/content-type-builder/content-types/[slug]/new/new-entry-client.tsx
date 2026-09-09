@@ -271,7 +271,7 @@ export default function CTBNewEntryClient({
         return <ValidationField value={value as string} onChange={v => handleFieldChange(field.slug, v)} required={field.required} type="uid" />
 
       case "select":
-        return <SelectField value={value as string} onChange={v => handleFieldChange(field.slug, v)} options={field.options?.options || []} required={field.required} />
+        return <SelectField value={value as string} onChange={v => handleFieldChange(field.slug, v)} options={field.options?.choices || field.options?.options || field.options || []} required={field.required} />
 
       case "media":
         return <MediaField value={value as any} onChange={v => handleFieldChange(field.slug, v)} tenantSlug={tenantSlug} type="image" />

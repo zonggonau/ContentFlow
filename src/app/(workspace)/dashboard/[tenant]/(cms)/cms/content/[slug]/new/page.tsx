@@ -43,12 +43,12 @@ export default async function CMSCreateEntryPage({
   // Fetch available locales
   let availableLocales = [{ locale: "id", name: "Bahasa Indonesia" }]
   try {
-    const dbLocales = await tenantDb.locale.findMany({
+    const dbLocales = await (tenantDb as any).locale?.findMany({
       where: { tenantId: access.tenantId },
       orderBy: { isDefault: 'desc' }
     })
     if (dbLocales && dbLocales.length > 0) {
-      availableLocales = dbLocales.map(l => ({ locale: l.code, name: l.name }))
+      availableLocales = dbLocales.map((l: any) => ({ locale: l.code, name: l.name }))
     }
   } catch {
     // Fallback default
@@ -81,7 +81,7 @@ export default async function CMSCreateEntryPage({
       initialEntriesLimit={entriesLimit}
       initialPreviewUrl={previewUrl}
       userRole={access.role}
-      customPermissions={access.customPermissions as any}
+      customPermissions={(access as any).customPermissions}
     />
   )
 }
