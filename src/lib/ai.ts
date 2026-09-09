@@ -8,13 +8,27 @@ const MODELS_TO_TRY = [
   "deepseek-reasoner" // Fallback to reasoning model if needed
 ]
 
-async function getOpenAI(): Promise<{ client: OpenAI; defaultModel: string }> {
+const ANTHROPIC_DEFAULT_MODEL = "claude-3-5-haiku-20241022"
+
+type ResolvedAiClient =
+  | { kind: "openai"; client: OpenAI; defaultModel: string }
+  | { kind: "anthropic"; apiKey: string; defaultModel: string }
+
+/**
+ * Resolve the configured AI backend. OpenAI, DeepSeek, and Gemini all speak
+ * the OpenAI chat-completions wire format, so they share one client via
+ * `baseURL` swapping. Anthropic's Messages API is a different shape
+ * entirely (no drop-in OpenAI-compatible endpoint), so it's resolved to a
+ * distinct "kind" and called separately in safeGenerateContent below.
+ */
+async function getAiClient(): Promise<ResolvedAiClient> {
   const { getResolvedAiConfig } = await import("./settings")
   const config = await getResolvedAiConfig()
 
   // 1. OpenAI jika provider openai atau key openai tersedia
   if (config.openaiApiKey) {
     return {
+      kind: "openai",
       client: new OpenAI({ apiKey: config.openaiApiKey }),
       defaultModel: config.provider === "openai" ? (config.defaultModel || "gpt-4o-mini") : "gpt-4o-mini"
     }
@@ -24,6 +38,7 @@ async function getOpenAI(): Promise<{ client: OpenAI; defaultModel: string }> {
   const deepseekKey = config.deepseekApiKey || process.env.DEEPSEEK_API_KEY
   if (deepseekKey) {
     return {
+      kind: "openai",
       client: new OpenAI({
         baseURL: 'https://api.deepseek.com',
         apiKey: deepseekKey
@@ -36,6 +51,7 @@ async function getOpenAI(): Promise<{ client: OpenAI; defaultModel: string }> {
   const geminiKey = config.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY
   if (geminiKey) {
     return {
+      kind: "openai",
       client: new OpenAI({
         baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
         apiKey: geminiKey,
@@ -44,7 +60,69 @@ async function getOpenAI(): Promise<{ client: OpenAI; defaultModel: string }> {
     }
   }
 
-  throw new Error("Tidak ada API Key AI (OpenAI, DeepSeek, atau Gemini) yang terkonfigurasi di Platform Settings atau .env.")
+  // 4. Anthropic Claude jika key anthropic tersedia
+  const anthropicKey = config.anthropicApiKey || process.env.ANTHROPIC_API_KEY
+  if (anthropicKey) {
+    return {
+      kind: "anthropic",
+      apiKey: anthropicKey,
+      defaultModel: config.provider === "anthropic" ? (config.defaultModel || ANTHROPIC_DEFAULT_MODEL) : ANTHROPIC_DEFAULT_MODEL
+    }
+  }
+
+  throw new Error("Tidak ada API Key AI (OpenAI, DeepSeek, Gemini, atau Anthropic) yang terkonfigurasi di Platform Settings atau .env.")
+}
+
+interface AnthropicCompletionResult {
+  text: string
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number }
+}
+
+async function callAnthropic(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  userPrompt: string,
+  maxTokens: number,
+  temperature: number,
+): Promise<AnthropicCompletionResult> {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: maxTokens,
+      temperature,
+      ...(systemPrompt ? { system: systemPrompt } : {}),
+      messages: [{ role: "user", content: userPrompt }],
+    }),
+    signal: AbortSignal.timeout(60000),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    const error: any = new Error(err.error?.message || res.statusText || "Anthropic request failed")
+    error.status = res.status
+    throw error
+  }
+
+  const data = await res.json()
+  const text = Array.isArray(data.content)
+    ? data.content.map((block: any) => (block?.type === "text" ? block.text : "")).join("")
+    : ""
+
+  return {
+    text,
+    usage: {
+      promptTokens: data.usage?.input_tokens ?? 0,
+      completionTokens: data.usage?.output_tokens ?? 0,
+      totalTokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+    },
+  }
 }
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
@@ -110,39 +188,71 @@ export async function safeGenerateContent(
     }
   }
   
-  const modelsToTry = finalConfig.overrideModel ? [finalConfig.overrideModel] : MODELS_TO_TRY
+  // Resolve the backend once — which provider is configured doesn't change
+  // mid-call, and each provider has its own sensible model names, not the
+  // DeepSeek-specific fallback list.
+  const resolved = await getAiClient()
+  const modelsToTry = finalConfig.overrideModel
+    ? [finalConfig.overrideModel]
+    : resolved.kind === "openai" && resolved.defaultModel.startsWith("deepseek")
+      ? MODELS_TO_TRY
+      : [resolved.defaultModel]
+
   for (const modelName of modelsToTry) {
     let attempts = 0
     const maxAttempts = 3
-    
+
     while (attempts < maxAttempts) {
       try {
         console.log(`[AI] Attempting with model: ${modelName} (Attempt ${attempts + 1}/${maxAttempts})`)
-        
-        const { client: openai } = await getOpenAI()
-        
-        const messages: OpenAI.Chat.ChatCompletionMessageParam[] = []
-        if (systemPrompt) {
-          messages.push({ role: "system", content: systemPrompt })
-        }
-        messages.push({ role: "user", content: userPrompt })
 
-        const completion = await openai.chat.completions.create({
-          model: modelName,
-          messages,
-          max_tokens: finalConfig.maxTokens || 4000,
-          temperature: finalConfig.temperature ?? 0.7,
-          response_format: finalConfig.responseFormat ? { type: finalConfig.responseFormat } : undefined,
-        })
-        
-        const text = completion.choices[0]?.message?.content
-        
-        if (text) {
-          const usage = {
+        let text: string | undefined
+        let usage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined
+
+        if (resolved.kind === "anthropic") {
+          // Claude has no dedicated JSON-mode flag like OpenAI's
+          // response_format — nudge it via the system prompt instead.
+          // ai-schema-generator.ts already strips a ```json fence if one
+          // slips through, so this is a best-effort instruction, not a hard
+          // guarantee.
+          const effectiveSystemPrompt =
+            finalConfig.responseFormat === "json_object"
+              ? `${systemPrompt}\n\nRespond with ONLY raw JSON — no markdown code fences, no commentary before or after.`
+              : systemPrompt
+          const result = await callAnthropic(
+            resolved.apiKey,
+            modelName,
+            effectiveSystemPrompt,
+            userPrompt,
+            finalConfig.maxTokens || 4000,
+            finalConfig.temperature ?? 0.7,
+          )
+          text = result.text
+          usage = result.usage
+        } else {
+          const messages: OpenAI.Chat.ChatCompletionMessageParam[] = []
+          if (systemPrompt) {
+            messages.push({ role: "system", content: systemPrompt })
+          }
+          messages.push({ role: "user", content: userPrompt })
+
+          const completion = await resolved.client.chat.completions.create({
+            model: modelName,
+            messages,
+            max_tokens: finalConfig.maxTokens || 4000,
+            temperature: finalConfig.temperature ?? 0.7,
+            response_format: finalConfig.responseFormat ? { type: finalConfig.responseFormat } : undefined,
+          })
+
+          text = completion.choices[0]?.message?.content ?? undefined
+          usage = {
             promptTokens: completion.usage?.prompt_tokens ?? 0,
             completionTokens: completion.usage?.completion_tokens ?? 0,
             totalTokens: completion.usage?.total_tokens ?? 0,
           }
+        }
+
+        if (text && usage) {
           
           // Deduct user credits if userId is set
           if (finalConfig.userId) {
