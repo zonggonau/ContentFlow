@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 
 export const metadata = {
   title: "MCP Server Documentation | SaCMS",
-  description: "Connect Claude, Cursor, Windsurf, Copilot, and AI Agents to SaCMS via Model Context Protocol.",
+  description: "Connect Antigravity or VS Code (GitHub Copilot) to SaCMS via the Model Context Protocol.",
 }
 
 export default function MCPDocsRedirectPage() {

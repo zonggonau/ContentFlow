@@ -335,27 +335,18 @@ interface PlatformConfig {
 
 const PLATFORMS: PlatformConfig[] = [
   {
-    id: "cursor",
-    name: "Cursor",
-    icon: "🟦",
-    badge: "AI Code Editor",
-    badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-    configPath: "Cursor Settings → MCP",
+    id: "antigravity",
+    name: "Antigravity / AGY",
+    icon: "⚡",
+    badge: "Google DeepMind",
+    badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
+    configPath: ".agents/mcp_config.json",
     transport: "Streamable HTTP",
     steps: [
-      "Open Cursor Settings (Ctrl+Shift+J or Cmd+Shift+J)",
-      "Navigate to 'Cursor Settings' → 'MCP'",
-      "Click '+ Add new MCP server'",
-      "Set Type to 'HTTP'",
-      "Set Name to 'sacms'",
-      "Set Server URL to your MCP URL (e.g. http://localhost:3000/api/mcp)",
-      "Add header 'Authorization' with value 'Bearer YOUR_API_TOKEN'",
-      "Click Save. A green status dot will confirm the connection is active",
-      "In Composer (Agent mode), ask: 'Use the sacms MCP server to get my CMS schema and generate TypeScript types'"
-    ],
-    notes: [
-      "Ensure Agent Mode is active in Cursor Composer to allow autonomous tool calling.",
-      "For remote workspaces or cloud access, expose your local port via Cloudflare Tunnel or ngrok."
+      "Create or open .agents/mcp_config.json in your workspace root",
+      "Paste the JSON snippet below with your SaCMS URL and API token",
+      "AGY will automatically connect to the MCP server upon startup or task execution",
+      "Prompt: 'Check my SaCMS schema and build the corresponding Next.js pages'"
     ],
     getConfig: (url) =>
       JSON.stringify(
@@ -363,77 +354,6 @@ const PLATFORMS: PlatformConfig[] = [
           mcpServers: {
             sacms: {
               url: url,
-              headers: {
-                Authorization: "Bearer YOUR_API_TOKEN"
-              }
-            }
-          }
-        },
-        null,
-        2
-      )
-  },
-  {
-    id: "claude",
-    name: "Claude Desktop",
-    icon: "🟣",
-    badge: "AI Assistant",
-    badgeColor: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-    configPath: "claude_desktop_config.json",
-    transport: "Streamable HTTP",
-    steps: [
-      "Open Claude Desktop → Settings (Gear icon) → Developer → Edit Config",
-      "Paste the configuration below into claude_desktop_config.json",
-      "Replace YOUR_API_TOKEN with your SaCMS Read-Only API token",
-      "Save the configuration and completely restart Claude Desktop",
-      "Verify the 🔌 plug icon appears in the chat input area",
-      "Try asking: 'List all content types in my SaCMS workspace'"
-    ],
-    notes: [
-      "Windows Path: %APPDATA%\\Claude\\claude_desktop_config.json",
-      "macOS Path: ~/Library/Application Support/Claude/claude_desktop_config.json",
-      "Claude Desktop requires a publicly reachable URL or localhost URL depending on your setup."
-    ],
-    getConfig: (url) =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            sacms: {
-              url: url,
-              headers: {
-                Authorization: "Bearer YOUR_API_TOKEN"
-              }
-            }
-          }
-        },
-        null,
-        2
-      )
-  },
-  {
-    id: "windsurf",
-    name: "Windsurf",
-    icon: "🌊",
-    badge: "AI IDE",
-    badgeColor: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20",
-    configPath: "~/.codeium/windsurf/mcp_config.json",
-    transport: "Streamable HTTP",
-    steps: [
-      "Open or create ~/.codeium/windsurf/mcp_config.json",
-      "Paste the configuration snippet below",
-      "Replace YOUR_API_TOKEN with your actual SaCMS API Token",
-      "Restart Windsurf",
-      "Open Cascade chat and type: 'Query published articles from SaCMS and display them in a modern card grid'"
-    ],
-    notes: [
-      "Note: Windsurf uses 'serverUrl' instead of 'url' as the configuration key."
-    ],
-    getConfig: (url) =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            sacms: {
-              serverUrl: url,
               headers: {
                 Authorization: "Bearer YOUR_API_TOKEN"
               }
@@ -478,88 +398,6 @@ const PLATFORMS: PlatformConfig[] = [
         null,
         2
       )
-  },
-  {
-    id: "cline",
-    name: "Cline",
-    icon: "🔵",
-    badge: "Autonomous Agent",
-    badgeColor: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-    configPath: "cline_mcp_settings.json",
-    transport: "Streamable HTTP",
-    steps: [
-      "Open Cline sidebar in VS Code",
-      "Click the Settings (Gear) icon → MCP Servers",
-      "Click 'Configure MCP Servers'",
-      "In cline_mcp_settings.json, insert the 'sacms' configuration below",
-      "Save the file. Cline will immediately discover all 7 SaCMS tools"
-    ],
-    getConfig: (url) =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            sacms: {
-              url: url,
-              headers: {
-                Authorization: "Bearer YOUR_API_TOKEN"
-              }
-            }
-          }
-        },
-        null,
-        2
-      )
-  },
-  {
-    id: "antigravity",
-    name: "Antigravity / AGY",
-    icon: "⚡",
-    badge: "Google DeepMind",
-    badgeColor: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-    configPath: ".agents/mcp_config.json",
-    transport: "Streamable HTTP",
-    steps: [
-      "Create or open .agents/mcp_config.json in your workspace root",
-      "Paste the JSON snippet below with your SaCMS URL and API token",
-      "AGY will automatically connect to the MCP server upon startup or task execution",
-      "Prompt: 'Check my SaCMS schema and build the corresponding Next.js pages'"
-    ],
-    getConfig: (url) =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            sacms: {
-              url: url,
-              headers: {
-                Authorization: "Bearer YOUR_API_TOKEN"
-              }
-            }
-          }
-        },
-        null,
-        2
-      )
-  },
-  {
-    id: "v0",
-    name: "v0.dev",
-    icon: "🔺",
-    badge: "AI UI Generator",
-    badgeColor: "bg-zinc-500/10 text-foreground/80 border-zinc-500/20",
-    configPath: "v0.dev Project Settings → MCP",
-    transport: "SSE / HTTP",
-    steps: [
-      "Open v0.dev and go to your Project Settings or Chat Integrations",
-      "Click '+ Add MCP Server'",
-      "Set Connection Type: Server-Sent Events (SSE) or HTTP",
-      "Enter Server URL: https://[your-tunnel-url]/api/mcp",
-      "Add Header: Key 'Authorization', Value 'Bearer YOUR_API_TOKEN'",
-      "Prompt: 'Generate a stunning landing page using real content from my homepage single type in SaCMS'"
-    ],
-    notes: [
-      "v0.dev runs in the cloud, so you must use a public URL or Cloudflare Tunnel (not localhost)."
-    ],
-    getConfig: (url) => url
   },
   {
     id: "inspector",
@@ -688,7 +526,7 @@ function CodeBlock({ code, language = "bash", filename }: { code: string; langua
 
 export function DocsClient() {
   const [origin, setOrigin] = useState("http://localhost:3000")
-  const [selectedPlatform, setSelectedPlatform] = useState("cursor")
+  const [selectedPlatform, setSelectedPlatform] = useState("antigravity")
   const [expandedTools, setExpandedTools] = useState<Record<string, boolean>>({
     get_full_schema: true,
     query_content: true
@@ -831,7 +669,7 @@ export function DocsClient() {
                     href="#mcp-ide-setup"
                     className="block px-2 py-1 rounded text-foreground/80 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-colors"
                   >
-                    ✦ Cursor, Claude & IDE Setup
+                    ✦ Antigravity & VS Code Setup
                   </a>
                 </li>
                 <li>
@@ -977,7 +815,7 @@ export function DocsClient() {
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      Live AI Tooling integration for Claude, Cursor, Windsurf, Copilot, Antigravity, and v0.dev
+                      Live AI Tooling integration for Antigravity and VS Code (GitHub Copilot)
                     </p>
                   </div>
                 </div>
@@ -1007,7 +845,7 @@ export function DocsClient() {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                   <div className="p-3 rounded-lg bg-muted/40/60 border border-border">
-                    <span className="font-bold text-violet-600 dark:text-violet-400 block mb-1">1. AI Client (Cursor / Claude)</span>
+                    <span className="font-bold text-violet-600 dark:text-violet-400 block mb-1">1. AI Client (Antigravity / VS Code)</span>
                     <p className="text-muted-foreground">Issues tool calls over Streamable HTTP or SSE to query content or inspect schemas.</p>
                   </div>
                   <div className="p-3 rounded-lg bg-muted/40/60 border border-border">
@@ -1331,8 +1169,8 @@ export function DocsClient() {
                 <div className="flex gap-2.5 items-start">
                   <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <p>
-                    Desktop clients like <strong>Cursor</strong> and <strong>Claude Desktop</strong> running on your local machine can directly connect to <code className="font-mono bg-muted px-1 py-0.5 rounded">http://localhost:3000/api/mcp</code>.
-                    However, cloud-hosted services like <strong>v0.dev</strong> or remote IDE instances cannot access your private localhost directly without a secure public tunnel.
+                    <strong>Antigravity</strong> and <strong>VS Code</strong> running on your local machine can directly connect to <code className="font-mono bg-muted px-1 py-0.5 rounded">http://localhost:3000/api/mcp</code>.
+                    Remote/cloud-hosted IDE instances cannot reach your private localhost directly without a secure public tunnel.
                   </p>
                 </div>
 
@@ -1376,7 +1214,7 @@ export function DocsClient() {
                 </div>
                 <div>
                   <h2 className="text-xl sm:text-2xl font-bold tracking-tight">AI Prompt Recipes & Workflows</h2>
-                  <p className="text-xs text-muted-foreground">Ready-to-use prompt templates to supercharge your development in Cursor & Claude</p>
+                  <p className="text-xs text-muted-foreground">Ready-to-use prompt templates to supercharge your development in Antigravity & VS Code</p>
                 </div>
               </div>
 

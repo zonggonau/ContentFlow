@@ -14,6 +14,10 @@ export default async function MCPPage({ params }: { params: Promise<{ tenant: st
   if (!access) redirect("/dashboard")
 
   const tenantSummary = access.tenant
+  // Matches the masking rule already used by /api/tenant/[tenant]/api-keys:
+  // only the workspace owner (or a super admin) ever sees the legacy
+  // ApiKey's full plaintext value.
+  const canSeeFullApiKey = access.role === "owner" || session.user.role === "super_admin"
 
   // Fetch existing tokens, keys, subscriptions, and infrastructure for this tenant
   const [tenant, tokens, apiKeys, subscription, vpsServer] = await Promise.all([
@@ -66,19 +70,28 @@ export default async function MCPPage({ params }: { params: Promise<{ tenant: st
         cpuCount: vpsServer.cpuCount,
         ramMb: vpsServer.ramMb,
       } : null}
-      existingTokens={tokens.map(t => ({ 
-        id: t.id, 
-        name: t.name, 
+      existingTokens={tokens.map(t => ({
+        id: t.id,
+        name: t.name,
         type: t.type,
-        token: t.token,
-        description: t.description, 
+        // ApiToken.token is stored as a SHA-256 hash (see actions/mcp-tokens.ts)
+        // — never send it to the client. The real token is only ever shown
+        // once, immediately after creation, via generatedPlainToken in
+        // handleCreateToken. Intentionally omitted here, not just masked,
+        // so nothing downstream can mistake the hash for a usable token.
+        description: t.description,
         createdAt: t.createdAt.toISOString(),
         lastUsedAt: t.lastUsedAt ? t.lastUsedAt.toISOString() : null,
       }))}
       existingApiKeys={apiKeys.map(k => ({
         id: k.id,
         name: k.name || "API Key",
-        key: k.key,
+        // Masked for anyone but the owner/super admin — matches
+        // /api/tenant/[tenant]/api-keys's existing rule. A masked value is
+        // never usable as a real credential, so it's excluded from
+        // selectedTokenValue auto-select in the client.
+        key: canSeeFullApiKey ? k.key : `${k.key.slice(0, 10)}…${k.key.slice(-4)}`,
+        keyIsMasked: !canSeeFullApiKey,
         createdAt: k.createdAt.toISOString(),
         lastUsed: k.lastUsed ? k.lastUsed.toISOString() : null,
       }))}

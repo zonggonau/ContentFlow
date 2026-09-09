@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select"
 import Link from "next/link"
 import { 
-  Copy, Check, Plug, Terminal, Bot, Globe, ExternalLink,
+  Copy, Check, Plug, Bot, Globe, ExternalLink,
   Code2, Key, Server, Sparkles, Database, Layers, Webhook,
   Plus, Trash2, ShieldCheck, Loader2, Info, CheckCircle2,
   Cpu, Search, Image, GitBranch, FileCode2, Wand2, Lightbulb,
@@ -57,6 +57,8 @@ interface ApiKeyItem {
   id: string
   name: string
   key: string
+  /** true when `key` above is a masked preview, not the real usable value. */
+  keyIsMasked?: boolean
   createdAt: string
   lastUsed?: string | null
 }
@@ -83,38 +85,12 @@ interface MCPDashboardClientProps {
 // ─── Config generators per platform ──────────────────────────────────────────
 
 function generateConfig(platform: string, mcpUrl: string, token: string = "YOUR_MCP_TOKEN", tenantSlug: string = "workspace"): string {
-  const origin = mcpUrl ? mcpUrl.replace(/\/api\/mcp\/?$/, "") : "http://localhost:3000"
-
   switch (platform) {
     case "antigravity":
       return JSON.stringify({
         mcpServers: {
           sacms: {
             url: mcpUrl,
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        }
-      }, null, 2)
-
-    case "cursor":
-      return JSON.stringify({
-        mcpServers: {
-          sacms: {
-            url: mcpUrl,
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        }
-      }, null, 2)
-
-    case "windsurf":
-      return JSON.stringify({
-        mcpServers: {
-          sacms: {
-            serverUrl: mcpUrl,
             headers: {
               Authorization: `Bearer ${token}`
             }
@@ -135,65 +111,12 @@ function generateConfig(platform: string, mcpUrl: string, token: string = "YOUR_
         }
       }, null, 2)
 
-    case "cline":
-      return JSON.stringify({
-        mcpServers: {
-          sacms: {
-            url: mcpUrl,
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        }
-      }, null, 2)
-
-    case "claude":
-      return JSON.stringify({
-        mcpServers: {
-          sacms: {
-            url: mcpUrl,
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        }
-      }, null, 2)
-
-    case "zed":
-      return JSON.stringify({
-        context_servers: {
-          sacms: {
-            url: mcpUrl,
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          }
-        }
-      }, null, 2)
-
-    case "contabo":
-    case "stdio":
-      return JSON.stringify({
-        mcpServers: {
-          sacms: {
-            command: "bunx",
-            args: [
-              "sacms-mcp",
-              "--host",
-              origin,
-              "--token",
-              token
-            ]
-          }
-        }
-      }, null, 2)
-
     default:
       return mcpUrl
   }
 }
 
-// ─── Platform definitions (Pure AI IDEs & Code Editors Only) ─────────────────
+// ─── Platform definitions (hanya Antigravity & VS Code yang didukung) ───────
 
 interface PlatformInfo {
   id: string
@@ -223,34 +146,6 @@ const PLATFORMS: PlatformInfo[] = [
     ]
   },
   {
-    id: "cursor",
-    name: "Cursor",
-    icon: "🟦",
-    badge: "AI Code Editor",
-    badgeColor: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
-    configPath: ".cursor/mcp.json",
-    steps: [
-      "Buka Cursor → Settings (Ctrl+Shift+J) → Features → MCP (atau buat file .cursor/mcp.json).",
-      "Klik tombol '+ Add new MCP server' atau salin file konfigurasi di bawah.",
-      "Pilih Type: 'HTTP' / 'SSE', URL: URL MCP SaCMS, Header: Authorization: Bearer <TOKEN>.",
-      "Indikator hijau akan menyala tanda server aktif.",
-      "Di Composer (Agent mode), minta: 'Gunakan MCP sacms untuk membuat content type products dan buatkan halaman etalase Next.js.'"
-    ]
-  },
-  {
-    id: "windsurf",
-    name: "Windsurf",
-    icon: "🌊",
-    badge: "AI IDE",
-    badgeColor: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20",
-    configPath: "~/.codeium/windsurf/mcp_config.json",
-    steps: [
-      "Buka file ~/.codeium/windsurf/mcp_config.json (atau klik ikon Cascade Settings → MCP).",
-      "Masukkan konfigurasi server 'sacms' dari snippet di bawah.",
-      "Restart Windsurf dan gunakan Cascade Agent untuk scaffolding schema atau data CMS."
-    ]
-  },
-  {
     id: "vscode",
     name: "VS Code (Copilot)",
     icon: "🐙",
@@ -262,64 +157,6 @@ const PLATFORMS: PlatformInfo[] = [
       "Salin dan tempelkan konfigurasi JSON di bawah.",
       "Buka GitHub Copilot Chat dan beralih ke mode Agent.",
       "Tool MCP SaCMS akan otomatis terdaftar dan siap dipanggil."
-    ]
-  },
-  {
-    id: "cline",
-    name: "Cline",
-    icon: "🔵",
-    badge: "VS Code Extension",
-    badgeColor: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
-    configPath: "cline_mcp_settings.json",
-    steps: [
-      "Buka panel Cline di VS Code → klik icon Settings (Gear) → MCP Servers.",
-      "Tambahkan konfigurasi server 'sacms'.",
-      "Cline akan menampilkan daftar 39 tools aktif yang siap digunakan."
-    ]
-  },
-  {
-    id: "claude",
-    name: "Claude Code & Desktop",
-    icon: "🟣",
-    badge: "AI Code Assistant",
-    badgeColor: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
-    configPath: "claude_desktop_config.json",
-    steps: [
-      "Buka Claude Desktop → Settings → Developer → Edit Config (atau jalankan Claude Code di terminal).",
-      "Tambahkan blok server 'sacms' seperti yang disediakan di bawah.",
-      "Simpan berkas konfigurasi lalu restart Claude Desktop.",
-      "Ikon plug 🔌 akan muncul di kolom chat menandakan MCP terhubung.",
-      "Prompt contoh: 'Daftarkan semua content type yang ada di workspace SaCMS saya dan buatkan ringkasannya.'"
-    ],
-    notes: [
-      "Windows: %APPDATA%\\Claude\\claude_desktop_config.json",
-      "macOS: ~/Library/Application Support/Claude/claude_desktop_config.json"
-    ]
-  },
-  {
-    id: "zed",
-    name: "Zed IDE",
-    icon: "🟩",
-    badge: "Fast Rust IDE",
-    badgeColor: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
-    configPath: "~/.config/zed/settings.json",
-    steps: [
-      "Buka Zed Settings (Ctrl+, atau ~/.config/zed/settings.json).",
-      "Tambahkan blok 'context_servers' seperti yang disediakan di bawah.",
-      "Simpan berkas konfigurasi. Zed AI Assistant akan otomatis terhubung ke MCP SaCMS."
-    ]
-  },
-  {
-    id: "contabo",
-    name: "Terminal Stdio CLI",
-    icon: "🖥️",
-    badge: "Stdio Bridge",
-    badgeColor: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
-    configPath: "Terminal CLI (bunx sacms-mcp)",
-    steps: [
-      "Gunakan perintah CLI 'bunx sacms-mcp' untuk menjembatani stdio lokal ke server SaCMS.",
-      "Bagus untuk autonomous background worker atau script otomatisasi lokal.",
-      "Jalankan di terminal lokal atau masukkan ke claude_desktop_config.json dengan command 'bunx'."
     ]
   }
 ]
@@ -431,13 +268,16 @@ export function MCPDashboardClient({
   const [copiedToken, setCopiedToken] = useState(false)
   const [activePlatform, setActivePlatform] = useState("antigravity")
 
-  // Auto select default token if exists
+  // Auto-select a default credential — but only one whose value is real and
+  // reusable. ApiToken.token is never sent to the client at all (it's a
+  // SHA-256 hash server-side; see page.tsx), so `tokens[].token` is always
+  // absent here and can never be auto-selected. A masked ApiKey preview
+  // isn't usable either — skip it the same way.
   useEffect(() => {
     if (!selectedTokenValue) {
-      if (tokens.length > 0 && tokens[0].token) {
-        setSelectedTokenValue(tokens[0].token)
-      } else if (apiKeys.length > 0) {
-        setSelectedTokenValue(apiKeys[0].key)
+      const usableKey = apiKeys.find((k) => !k.keyIsMasked)
+      if (usableKey) {
+        setSelectedTokenValue(usableKey.key)
       }
     }
   }, [tokens, apiKeys, selectedTokenValue])
@@ -461,12 +301,7 @@ export function MCPDashboardClient({
 
   const handleDownloadConfigFile = (platformId: string) => {
     const snippet = generateConfig(platformId, mcpUrl, effectiveToken, tenantSlug)
-    let filename = "mcp_config.json"
-    if (platformId === "cursor") filename = "mcp.json"
-    else if (platformId === "vscode") filename = "mcp.json"
-    else if (platformId === "claude") filename = "claude_desktop_config.json"
-    else if (platformId === "cline") filename = "cline_mcp_settings.json"
-    else if (platformId === "zed") filename = "settings.json"
+    const filename = platformId === "vscode" ? "mcp.json" : "mcp_config.json"
 
     const blob = new Blob([snippet], { type: "application/json" })
     const url = URL.createObjectURL(blob)
@@ -489,7 +324,7 @@ export function MCPDashboardClient({
       toast({
         variant: "destructive",
         title: "Nama Token Wajib",
-        description: "Masukkan nama deskriptif untuk token MCP Anda (misal: Cursor Dev)",
+        description: "Masukkan nama deskriptif untuk token MCP Anda (misal: VS Code Dev)",
       })
       return
     }
@@ -512,11 +347,15 @@ export function MCPDashboardClient({
           setSelectedTokenValue(res.plainToken)
         }
         if (res.token) {
+          // res.token (the persisted record) never carries a `.token` field —
+          // the server only returns the real value once, as res.plainToken,
+          // right here at creation time. Not stored in `tokens[]` at all:
+          // once this session forgets it, it's gone, same as the DB (which
+          // only ever has the hash).
           setTokens(prev => [{
             id: res.token.id,
             name: res.token.name,
             type: "mcp",
-            token: res.plainToken || (res.token as any)?.token || "",
             description: res.token.description,
             createdAt: new Date().toISOString(),
           }, ...prev])
@@ -584,7 +423,7 @@ export function MCPDashboardClient({
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Hubungkan AI Editor (Antigravity, Cursor, Claude, v0.dev, VS Code, Windsurf) ke SaCMS untuk manipulasi skema dan data real-time.
+                  Hubungkan AI Editor (Antigravity, VS Code) ke SaCMS untuk manipulasi skema dan data real-time.
                 </p>
               </div>
             </div>
@@ -612,7 +451,7 @@ export function MCPDashboardClient({
                     </Badge>
                   </div>
                   <p className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-1 max-w-2xl">
-                    Endpoint MCP, OpenAPI 3.1 untuk ChatGPT, dan Gemini Function Calling hanya dapat diakses saat workspace memiliki status pembayaran <strong>PAID</strong>. Silakan aktifkan langganan Anda untuk mulai menghubungkan agent AI.
+                    Endpoint MCP hanya dapat diakses saat workspace memiliki status pembayaran <strong>PAID</strong>. Silakan aktifkan langganan Anda untuk mulai menghubungkan Antigravity atau VS Code.
                   </p>
                 </div>
               </div>
@@ -665,8 +504,8 @@ export function MCPDashboardClient({
           )}
 
           {/* Pure IDE MCP Endpoints Bar */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
+          <div className="grid grid-cols-1 gap-4">
+
             {/* Server URL Card (MCP HTTP / SSE) */}
             <Card className="rounded-2xl border-border/80 shadow-xs bg-card p-4 flex flex-col justify-between space-y-3">
               <div>
@@ -676,11 +515,11 @@ export function MCPDashboardClient({
                     <p className="text-xs font-bold text-foreground">MCP Server (HTTP / SSE)</p>
                   </div>
                   <Badge variant="outline" className="text-[9px] font-bold uppercase rounded-md bg-primary/10 text-primary border-primary/20">
-                    Cursor / Windsurf / AGY / VS Code
+                    Antigravity / VS Code
                   </Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Endpoint stream JSON-RPC 2.0 untuk seluruh AI Code Editor & IDE.
+                  Endpoint stream JSON-RPC 2.0 untuk Antigravity dan VS Code.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -696,39 +535,6 @@ export function MCPDashboardClient({
                   className="h-9 px-3 rounded-xl text-xs font-bold shrink-0"
                 >
                   <Copy className="h-3.5 w-3.5 mr-1.5" /> Salin URL
-                </Button>
-              </div>
-            </Card>
-
-            {/* Direct CLI Command Card */}
-            <Card className="rounded-2xl border-border/80 shadow-xs bg-card p-4 flex flex-col justify-between space-y-3">
-              <div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Terminal className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <p className="text-xs font-bold text-foreground">Terminal Stdio Bridge (CLI)</p>
-                  </div>
-                  <Badge variant="outline" className="text-[9px] font-bold uppercase rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                    Claude Code / CLI
-                  </Badge>
-                </div>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Perintah CLI untuk menghubungkan local stdio ke server SaCMS.
-                </p>
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  value={`bunx sacms-mcp --url ${mcpUrl || "https://sacms.cloud/api/mcp"} --token ${effectiveToken || "YOUR_TOKEN"}`}
-                  readOnly
-                  className="font-mono text-xs bg-muted/30 border-border/80 rounded-xl h-9 text-foreground"
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => handleCopy(`bunx sacms-mcp --url ${mcpUrl || "https://sacms.cloud/api/mcp"} --token ${effectiveToken || "YOUR_TOKEN"}`, "Perintah CLI MCP")}
-                  className="h-9 px-3 rounded-xl text-xs font-bold shrink-0"
-                >
-                  <Copy className="h-3.5 w-3.5 mr-1.5" /> Salin CLI
                 </Button>
               </div>
             </Card>
@@ -770,14 +576,19 @@ export function MCPDashboardClient({
                     <SelectValue placeholder="Pilih Kunci" />
                   </SelectTrigger>
                   <SelectContent className="rounded-xl border-border bg-card">
+                    {/* Existing MCP tokens have no usable value here — the real
+                        token is only ever known once, right after creation
+                        (generatedPlainToken). Listed as disabled so the admin
+                        can see the token exists without being able to select
+                        a value that would silently copy nothing usable. */}
                     {tokens.map((t) => (
-                      <SelectItem key={t.id} value={t.token || t.id} className="text-xs font-mono">
-                        Token: {t.name}
+                      <SelectItem key={t.id} value={t.id} disabled className="text-xs font-mono opacity-60">
+                        Token: {t.name} (buat ulang untuk menyalin)
                       </SelectItem>
                     ))}
                     {apiKeys.map((k) => (
-                      <SelectItem key={k.id} value={k.key} className="text-xs font-mono">
-                        API Key: {k.name}
+                      <SelectItem key={k.id} value={k.key} disabled={k.keyIsMasked} className="text-xs font-mono">
+                        API Key: {k.name}{k.keyIsMasked ? " (disamarkan)" : ""}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -937,7 +748,7 @@ export function MCPDashboardClient({
               </TabsTrigger>
             </TabsList>
 
-            {/* TAB 1: 36 LIVE TOOLS */}
+            {/* TAB 1: Live tools catalog — count shown dynamically via MCP_TOOLS_CATALOG.length above, not hardcoded */}
             <TabsContent value="catalog" className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {MCP_TOOLS_CATALOG.map((tool) => (
@@ -1145,9 +956,10 @@ export function MCPDashboardClient({
             {/* TAB 3: RECOMMENDED MCP TOOLS — none of these exist yet on the
                 server (see server.registerTool(...) calls in
                 api/mcp/[[...transport]]/route.ts for the real, callable set
-                shown on the "36 Tools Live" tab). This tab is a roadmap of
-                ideas, not documentation of live capability — an AI editor
-                calling any tool name shown below will get a hard MCP error. */}
+                shown on the catalog tab via MCP_TOOLS_CATALOG above). This
+                tab is a roadmap of ideas, not documentation of live
+                capability — an AI editor calling any tool name shown below
+                will get a hard MCP error. */}
             <TabsContent value="recommendations" className="space-y-4">
               <div className="p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start gap-2.5 text-xs text-amber-700 dark:text-amber-400">
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -1250,7 +1062,7 @@ export function MCPDashboardClient({
               <DialogHeader>
                 <DialogTitle className="text-base font-bold text-foreground">Generate Token MCP Baru</DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
-                  Buat token otorisasi khusus untuk menghubungkan Antigravity, Cursor, Claude Desktop, atau v0.dev.
+                  Buat token otorisasi khusus untuk menghubungkan Antigravity atau VS Code.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-2">
@@ -1258,7 +1070,7 @@ export function MCPDashboardClient({
                   <Label htmlFor="mcp-name" className="text-xs font-semibold text-foreground">Nama Klien / Editor</Label>
                   <Input
                     id="mcp-name"
-                    placeholder="Contoh: Antigravity IDE / Cursor Local"
+                    placeholder="Contoh: Antigravity IDE / VS Code Local"
                     value={newTokenName}
                     onChange={(e) => setNewTokenName(e.target.value)}
                     className="rounded-xl h-9 text-xs bg-background border-border/80"
