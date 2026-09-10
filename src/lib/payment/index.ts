@@ -19,7 +19,18 @@ export { __mockMarkTransactionPaid } from "./mock"
 
 const hasMidtransCredential = Boolean(process.env.MIDTRANS_SERVER_KEY?.trim())
 
-if (hasMidtransCredential) {
+// Explicit opt-in: PAYMENT_PROVIDER=mock forces the in-memory mock even when
+// a real MIDTRANS_SERVER_KEY is present — so a developer with sandbox creds
+// in .env can still run the full checkout flow offline / when Midtrans is
+// unreachable, without deleting their key. Only honoured outside production.
+const forceMock =
+  process.env.PAYMENT_PROVIDER === "mock" && isMockAllowed("midtrans", false)
+
+if (forceMock) {
+  console.warn("[payment] PAYMENT_PROVIDER=mock — using the mock payment provider (dev/test only).")
+  registerPaymentProvider(new MockPaymentProvider("midtrans"))
+  registerPaymentProvider(new MockPaymentProvider("mock"))
+} else if (hasMidtransCredential) {
   registerPaymentProvider(new MidtransProvider())
 } else if (isMockAllowed("midtrans", hasMidtransCredential)) {
   // Registered under the SAME name ("midtrans") every call site already
@@ -33,4 +44,5 @@ if (hasMidtransCredential) {
     "This is expected in development/test; it is never used in production."
   )
   registerPaymentProvider(new MockPaymentProvider("midtrans"))
+  registerPaymentProvider(new MockPaymentProvider("mock"))
 }

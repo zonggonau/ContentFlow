@@ -8,6 +8,17 @@ import type {
   VerifyWebhookResult,
   TransactionStatusResult,
 } from "./provider"
+import { isNonProduction } from "../dev-mode"
+
+/** A network-level failure reaching Midtrans (DNS, timeout, refused) — as
+ *  opposed to a 4xx/5xx the API actually returned, which signals a real
+ *  integration problem worth surfacing. */
+function isConnectionError(err: any): boolean {
+  const code = err?.code || err?.cause?.code || ""
+  if (["ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ECONNRESET"].includes(code)) return true
+  const msg = String(err?.message || "")
+  return /ETIMEDOUT|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|connection failure|HTTP response not found/i.test(msg)
+}
 
 function mapMidtransStatus(
   transactionStatus: string
@@ -44,7 +55,34 @@ export class MidtransProvider implements PaymentProvider {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
     const { snap } = await this.getSnapClient()
 
-    const transaction = await snap.createTransaction({
+    let transaction: any
+    try {
+      transaction = await this.createSnapTransaction(snap, req, appUrl)
+    } catch (err) {
+      // In development/test, if Midtrans is simply unreachable (offline,
+      // firewalled, VPN off), transparently fall back to the mock so the
+      // checkout flow stays testable. A real API error (bad key, bad
+      // request) is NOT caught here — it still surfaces.
+      if (isNonProduction() && isConnectionError(err)) {
+        console.warn(
+          "[payment] Midtrans unreachable in dev — falling back to the mock provider for this checkout:",
+          (err as any)?.message,
+        )
+        const { MockPaymentProvider } = await import("./mock")
+        return new MockPaymentProvider("midtrans").createPayment(req)
+      }
+      throw err
+    }
+
+    return {
+      token: transaction.token,
+      redirectUrl: transaction.redirect_url,
+      raw: transaction,
+    }
+  }
+
+  private async createSnapTransaction(snap: any, req: CreatePaymentRequest, appUrl: string) {
+    return snap.createTransaction({
       transaction_details: {
         order_id: req.orderId,
         gross_amount: req.amount,
@@ -80,12 +118,6 @@ export class MidtransProvider implements PaymentProvider {
         pending: `${appUrl}/dashboard/payment/pending`,
       },
     })
-
-    return {
-      token: transaction.token,
-      redirectUrl: transaction.redirect_url,
-      raw: transaction,
-    }
   }
 
   async verifyWebhook(req: VerifyWebhookRequest): Promise<VerifyWebhookResult> {
