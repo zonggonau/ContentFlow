@@ -77,7 +77,7 @@ export function WorkspaceCreationDialog({
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [domainHost, setDomainHost] = useState(".sacms.cloud")
-  const [activeCategory, setActiveCategory] = useState<"cloud" | "vps" | "vds">("cloud")
+  const [activeCategory, setActiveCategory] = useState<"cloud" | "vps" | "vds" | "storage">("cloud")
 
   const defaultPlanSlug = workspacePlans[0]?.plan_slug || workspacePlans[0]?.id || "free"
 
@@ -105,25 +105,26 @@ export function WorkspaceCreationDialog({
     }
   }, [])
 
-  // Categorize workspace plans into 3 clean categories
+  // Categorize workspace plans into 4 clean categories.
+  const planKind = (p: WorkspacePlan): "storage" | "vds" | "vps" | "cloud" => {
+    const s = `${p.plan_slug || ""} ${p.id || ""} ${p.name || ""}`.toLowerCase()
+    if (s.includes("storage")) return "storage"
+    if (s.includes("vds")) return "vds"
+    if (s.includes("vps")) return "vps"
+    return "cloud"
+  }
+
   const categorizedPlans = useMemo(() => {
-    const cloud = workspacePlans.filter(p => {
-      const slug = (p.plan_slug || p.id || p.name || "").toLowerCase()
-      return !slug.includes("vps") && !slug.includes("vds")
-    })
-    const vps = workspacePlans.filter(p => {
-      const slug = (p.plan_slug || p.id || p.name || "").toLowerCase()
-      return slug.includes("vps") && !slug.includes("vds")
-    })
-    const vds = workspacePlans.filter(p => {
-      const slug = (p.plan_slug || p.id || p.name || "").toLowerCase()
-      return slug.includes("vds")
-    })
+    const storage = workspacePlans.filter(p => planKind(p) === "storage")
+    const vds = workspacePlans.filter(p => planKind(p) === "vds")
+    const vps = workspacePlans.filter(p => planKind(p) === "vps")
+    const cloud = workspacePlans.filter(p => planKind(p) === "cloud")
 
     return {
-      cloud: cloud.length > 0 ? cloud : (vps.length === 0 && vds.length === 0 ? workspacePlans : cloud),
+      cloud: cloud.length > 0 ? cloud : (vps.length === 0 && vds.length === 0 && storage.length === 0 ? workspacePlans : cloud),
       vps,
-      vds
+      vds,
+      storage,
     }
   }, [workspacePlans])
 
@@ -148,7 +149,9 @@ export function WorkspaceCreationDialog({
   // Automatically switch tab when plan belongs to that category
   useEffect(() => {
     const currentPlan = (newWorkspace.plan || "").toLowerCase()
-    if (currentPlan.includes("vds")) {
+    if (currentPlan.includes("storage")) {
+      setActiveCategory("storage")
+    } else if (currentPlan.includes("vds")) {
       setActiveCategory("vds")
     } else if (currentPlan.includes("vps")) {
       setActiveCategory("vps")
@@ -322,7 +325,7 @@ export function WorkspaceCreationDialog({
                   <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center text-primary text-xs font-bold">2</div>
                   <div>
                     <h3 className="text-xs font-bold text-foreground">Pilih Paket Kapasitas Workspace</h3>
-                    <p className="text-[11px] text-muted-foreground">Pilih paket cloud atau dedicated server sesuai skala proyek Anda.</p>
+                    <p className="text-[11px] text-muted-foreground">Pilih paket Cloud Ekonomis, Cloud VPS Standar, Gov &amp; Enterprise VDS, atau VPS Storage sesuai skala proyek Anda.</p>
                   </div>
                 </div>
 
@@ -371,6 +374,19 @@ export function WorkspaceCreationDialog({
                 >
                   <ShieldCheck className="h-3.5 w-3.5" />
                   <span>Gov & Enterprise VDS ({categorizedPlans.vds.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveCategory("storage")}
+                  className={cn(
+                    "rounded-lg px-3 py-1.5 font-bold text-xs transition-all flex items-center gap-1.5",
+                    activeCategory === "storage"
+                      ? "bg-primary text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  <HardDrive className="h-3.5 w-3.5" />
+                  <span>VPS Storage ({categorizedPlans.storage.length})</span>
                 </button>
               </div>
               

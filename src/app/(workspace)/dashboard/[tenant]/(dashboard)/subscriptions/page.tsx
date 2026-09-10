@@ -54,7 +54,7 @@ export default function TenantSubscriptionsPage() {
   const [loading, setLoading] = useState(true)
   const [loadingTenants, setLoadingTenants] = useState(true)
   const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('year')
-  const [planCategory, setPlanCategory] = useState<'all' | 'cloud' | 'vps' | 'vds'>('all')
+  const [planCategory, setPlanCategory] = useState<'all' | 'cloud' | 'vps' | 'vds' | 'storage'>('all')
   const [cancellingSubscription, setCancellingSubscription] = useState(false)
   const [showCancelConfirm, setShowCancelConfirm] = useState(false)
   const [isEnterpriseMode, setIsEnterpriseMode] = useState(false)
@@ -832,8 +832,8 @@ export default function TenantSubscriptionsPage() {
                                 amount: inv.amount,
                                 status: inv.status,
                                 date: new Date(inv.createdAt).toLocaleDateString('id-ID'),
-                                customerName: tenant?.name || "Workspace",
-                                description: `Langganan Workspace ${tenant?.name || ""} (${inv.plan || "Pro"})`
+                                customerName: currentTenant?.name || "Workspace",
+                                description: `Langganan Workspace ${currentTenant?.name || ""} (${inv.plan || "Pro"})`
                               })}
                             >
                               <Download className="h-3.5 w-3.5" />
