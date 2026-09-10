@@ -851,6 +851,155 @@ export async function getContaboInstance(instanceId: string | number): Promise<C
   }
 }
 
+export interface ContaboInstanceDetail {
+  instanceId: string
+  name: string
+  displayName: string
+  status: string
+  productId: string
+  productName: string
+  imageId: string
+  region: string
+  regionName: string
+  ipv4: string
+  ipv6: string
+  cpuCores: number
+  ramMb: number
+  diskGb: number
+  osType: string
+  defaultUser: string
+  sshKeyCount: number
+  dataCenter: string
+  createdDate: string | null
+  cancelDate: string | null
+}
+
+/**
+ * Fetch the full detail record for one instance (richer than
+ * getContaboInstance) — used by the admin management panel.
+ */
+export async function getContaboInstanceDetail(instanceId: string | number): Promise<ContaboInstanceDetail | null> {
+  if (typeof instanceId === 'string' && instanceId.startsWith('sim-')) {
+    return {
+      instanceId: String(instanceId),
+      name: 'Simulated VPS',
+      displayName: 'Simulated VPS',
+      status: 'running',
+      productId: 'V153',
+      productName: 'Cloud VPS 4 SSD',
+      imageId: CONTABO_STANDARD_IMAGES[DEFAULT_CONTABO_IMAGE],
+      region: DEFAULT_CONTABO_REGION,
+      regionName: 'Singapore',
+      ipv4: '127.0.0.1',
+      ipv6: '',
+      cpuCores: 4,
+      ramMb: 8192,
+      diskGb: 75,
+      osType: 'Linux',
+      defaultUser: 'root',
+      sshKeyCount: 0,
+      dataCenter: 'SIN-1',
+      createdDate: new Date().toISOString(),
+      cancelDate: null,
+    }
+  }
+
+  if (!isContaboConfigured()) return null
+
+  try {
+    const token = await getAccessToken()
+    const creds = getContaboCredentials()
+    const res = await fetch(`${creds.apiUrl}/${instanceId}`, { method: 'GET', headers: getRequestHeaders(token) })
+    if (!res.ok) return null
+    const result = await res.json()
+    const i = result.data?.[0] || result.data || result
+    return {
+      instanceId: String(i.instanceId ?? i.id ?? instanceId),
+      name: i.name || i.displayName || '',
+      displayName: i.displayName || i.name || '',
+      status: i.status || 'unknown',
+      productId: i.productId || '',
+      productName: i.productName || i.productType || i.productId || '',
+      imageId: i.imageId || '',
+      region: i.region || '',
+      regionName: i.regionName || i.region || '',
+      ipv4: i.ipConfig?.v4?.ip || i.ipv4 || '',
+      ipv6: i.ipConfig?.v6?.ip || i.ipv6 || '',
+      cpuCores: i.cpuCores || 0,
+      ramMb: i.ramMb || 0,
+      diskGb: i.diskMb ? Math.round(i.diskMb / 1024) : 0,
+      osType: i.osType || '',
+      defaultUser: i.defaultUser || 'root',
+      sshKeyCount: Array.isArray(i.sshKeys) ? i.sshKeys.length : 0,
+      dataCenter: i.dataCenter || '',
+      createdDate: i.createdDate || null,
+      cancelDate: i.cancelDate || null,
+    }
+  } catch (err: any) {
+    console.warn(`[Contabo API] getContaboInstanceDetail(${instanceId}) failed:`, err?.message || err)
+    return null
+  }
+}
+
+/**
+ * Graceful ACPI shutdown (vs. stopContaboInstance's hard power-off).
+ */
+export async function shutdownContaboInstance(instanceId: string | number): Promise<boolean> {
+  if (typeof instanceId === 'string' && instanceId.startsWith('sim-')) return true
+  const token = await getAccessToken()
+  const creds = getContaboCredentials()
+  const res = await fetch(`${creds.apiUrl}/${instanceId}/actions/shutdown`, {
+    method: 'POST',
+    headers: getRequestHeaders(token),
+  })
+  return res.ok
+}
+
+/**
+ * Rename an instance's display name (PATCH — does not touch the OS).
+ */
+export async function updateContaboInstanceName(instanceId: string | number, displayName: string): Promise<boolean> {
+  if (typeof instanceId === 'string' && instanceId.startsWith('sim-')) return true
+  const token = await getAccessToken()
+  const creds = getContaboCredentials()
+  const res = await fetch(`${creds.apiUrl}/${instanceId}`, {
+    method: 'PATCH',
+    headers: getRequestHeaders(token),
+    body: JSON.stringify({ displayName: displayName.slice(0, 255) }),
+  })
+  return res.ok
+}
+
+/**
+ * Reinstall the OS on an instance (PUT). DESTRUCTIVE — wipes all data on the
+ * instance's disk. `imageId` is a Contabo image UUID (see
+ * CONTABO_STANDARD_IMAGES).
+ */
+export async function reinstallContaboInstance(
+  instanceId: string | number,
+  imageId: string,
+  opts: { userData?: string; rootPassword?: number; sshKeys?: number[]; defaultUser?: string } = {},
+): Promise<boolean> {
+  if (typeof instanceId === 'string' && instanceId.startsWith('sim-')) return true
+  const token = await getAccessToken()
+  const creds = getContaboCredentials()
+  const payload: Record<string, unknown> = { imageId }
+  if (opts.userData) payload.userData = Buffer.from(opts.userData).toString('base64')
+  if (opts.rootPassword) payload.rootPassword = opts.rootPassword
+  if (opts.sshKeys?.length) payload.sshKeys = opts.sshKeys
+  if (opts.defaultUser) payload.defaultUser = opts.defaultUser
+  const res = await fetch(`${creds.apiUrl}/${instanceId}`, {
+    method: 'PUT',
+    headers: getRequestHeaders(token),
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText)
+    throw new Error(`Contabo reinstall failed for instance ${instanceId} (${res.status}): ${errText}`)
+  }
+  return res.ok
+}
+
 /**
  * Restart a Contabo VPS instance
  */

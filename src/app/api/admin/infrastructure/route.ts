@@ -54,7 +54,7 @@ export const GET = withAdminAuth(async (req) => {
       suspended: servers.filter(s => s.status === 'suspended').length,
     }
 
-    const { CONTABO_PLANS, CONTABO_REGIONS, DEFAULT_CONTABO_REGION } = await import("@/lib/infrastructure/contabo")
+    const { CONTABO_PLANS, CONTABO_REGIONS, DEFAULT_CONTABO_REGION, CONTABO_STANDARD_IMAGES } = await import("@/lib/infrastructure/contabo")
 
     // Only return tenants eligible for dedicated infra (paid VPS/VDS/Storage or Enterprise)
     const eligiblePlans = Object.keys(CONTABO_PLANS).concat(["pro", "enterprise", "ENTERPRISE"])
@@ -84,6 +84,7 @@ export const GET = withAdminAuth(async (req) => {
         plans: Object.values(CONTABO_PLANS),
         regions: CONTABO_REGIONS,
         defaultRegion: DEFAULT_CONTABO_REGION,
+        images: Object.entries(CONTABO_STANDARD_IMAGES).map(([label, id]) => ({ label, id })),
         tenants,
       }
     })

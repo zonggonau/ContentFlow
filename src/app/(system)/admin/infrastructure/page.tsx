@@ -32,6 +32,13 @@ import {
   Boxes,
   Layers,
   Triangle,
+  Camera,
+  History,
+  Power,
+  PowerOff,
+  Settings2,
+  Pencil,
+  HardDriveDownload,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -219,6 +226,19 @@ export default function AdminInfrastructurePage() {
   const [actionLoadingKey, setActionLoadingKey] = useState<string | null>(null)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
 
+  // Contabo instance management modal (keyed by provider instanceId — works
+  // for tracked AND untracked instances shown in the VPS/VDS/Storage tabs)
+  const [contaboModalOpen, setContaboModalOpen] = useState(false)
+  const [contaboRow, setContaboRow] = useState<ContaboInstanceRow | null>(null)
+  const [contaboDetail, setContaboDetail] = useState<any>(null)
+  const [contaboSnapshots, setContaboSnapshots] = useState<any[]>([])
+  const [contaboDetailLoading, setContaboDetailLoading] = useState(false)
+  const [contaboActionKey, setContaboActionKey] = useState<string | null>(null)
+  const [newSnapshotName, setNewSnapshotName] = useState("")
+  const [renameValue, setRenameValue] = useState("")
+  const [reinstallImageId, setReinstallImageId] = useState("")
+  const [contaboConfirm, setContaboConfirm] = useState<null | { kind: "rollback" | "snapshot-delete" | "reinstall" | "cancel"; snapshotId?: string; label: string }>(null)
+
   // Provision Modal States
   const [provisionModalOpen, setProvisionModalOpen] = useState(false)
   const [provisionLoading, setProvisionLoading] = useState(false)
@@ -226,11 +246,13 @@ export default function AdminInfrastructurePage() {
     plans: any[]
     regions: any[]
     defaultRegion: string
+    images: { label: string; id: string }[]
     tenants: any[]
   }>({
     plans: [],
     regions: [],
     defaultRegion: "SIN",
+    images: [],
     tenants: [],
   })
   const [provisionForm, setProvisionForm] = useState({
@@ -279,6 +301,105 @@ export default function AdminInfrastructurePage() {
       // Non-fatal — the tab just shows an "unavailable" state.
     } finally {
       setProvidersLoading(false)
+    }
+  }
+
+  const openContaboManage = async (row: ContaboInstanceRow) => {
+    setContaboRow(row)
+    setContaboModalOpen(true)
+    setContaboDetail(null)
+    setContaboSnapshots([])
+    setNewSnapshotName("")
+    setRenameValue(row.displayName || row.name)
+    setReinstallImageId("")
+    setContaboConfirm(null)
+    setContaboDetailLoading(true)
+    try {
+      const res = await fetch(`/api/admin/infrastructure/contabo/${encodeURIComponent(row.instanceId)}`)
+      const data = await res.json()
+      if (res.ok) {
+        setContaboDetail(data.instance)
+        setContaboSnapshots(data.snapshots || [])
+        setRenameValue(data.instance?.displayName || row.displayName || row.name)
+      } else {
+        toast({ variant: "destructive", title: "Gagal", description: data.error || "Gagal memuat detail instance." })
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Terjadi Kesalahan", description: "Kesalahan jaringan saat memuat instance." })
+    } finally {
+      setContaboDetailLoading(false)
+    }
+  }
+
+  const refreshContaboDetail = async () => {
+    if (!contaboRow) return
+    setContaboDetailLoading(true)
+    try {
+      const res = await fetch(`/api/admin/infrastructure/contabo/${encodeURIComponent(contaboRow.instanceId)}`)
+      const data = await res.json()
+      if (res.ok) {
+        setContaboDetail(data.instance)
+        setContaboSnapshots(data.snapshots || [])
+      }
+    } catch {
+      /* keep stale detail */
+    } finally {
+      setContaboDetailLoading(false)
+    }
+  }
+
+  const runContaboAction = async (
+    action: string,
+    params: Record<string, unknown> = {},
+    opts: { successTitle?: string } = {},
+  ) => {
+    if (!contaboRow) return
+    setContaboActionKey(`${action}-${params.snapshotId || ""}`)
+    try {
+      const res = await fetch(`/api/admin/infrastructure/contabo/${encodeURIComponent(contaboRow.instanceId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...params }),
+      })
+      const data = await res.json()
+      if (res.ok && data.success !== false) {
+        toast({ title: opts.successTitle || "Berhasil", description: data.message || "Operasi dijalankan." })
+        setContaboConfirm(null)
+        await refreshContaboDetail()
+        fetchProviders(true)
+        fetchServers(true)
+      } else {
+        toast({ variant: "destructive", title: "Gagal", description: data.error || data.message || "Operasi gagal." })
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Terjadi Kesalahan", description: "Kesalahan jaringan." })
+    } finally {
+      setContaboActionKey(null)
+    }
+  }
+
+  const runContaboCancel = async () => {
+    if (!contaboRow) return
+    setContaboActionKey("cancel-")
+    try {
+      const res = await fetch(
+        `/api/admin/infrastructure/contabo/${encodeURIComponent(contaboRow.instanceId)}?confirm=CANCEL`,
+        { method: "DELETE" },
+      )
+      const data = await res.json()
+      if (res.ok && data.success !== false) {
+        toast({ title: "Permintaan Terkirim", description: data.message || "Instance dibatalkan." })
+        setContaboConfirm(null)
+        setContaboModalOpen(false)
+        fetchProviders(true)
+        fetchServers(true)
+      } else {
+        toast({ variant: "destructive", title: "Gagal", description: data.error || "Gagal membatalkan instance." })
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Terjadi Kesalahan", description: "Kesalahan jaringan." })
+    } finally {
+      setContaboActionKey(null)
     }
   }
 
@@ -571,33 +692,49 @@ export default function AdminInfrastructurePage() {
                       </TableCell>
 
                       <TableCell className="text-right">
-                        {full ? (
-                          <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {!row.orphan && (
                             <Button
                               variant="default"
                               size="sm"
-                              onClick={() => {
-                                setTroubleshootServer(full)
-                                setTroubleshootModalOpen(true)
-                              }}
+                              onClick={() => openContaboManage(row)}
                               className="rounded-xl h-8 px-3 text-xs font-bold gap-1.5 shadow-xs"
+                              title="Power, snapshot, reinstall & pengaturan Contabo"
                             >
-                              <Wrench className="h-3.5 w-3.5" />
-                              Tindakan
+                              <Settings2 className="h-3.5 w-3.5" />
+                              Kelola
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8 rounded-xl"
-                              title="Lihat Kredensial & Endpoint"
-                              onClick={() => handleViewCredentials(full)}
-                            >
-                              <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-muted-foreground">Kelola di panel Contabo</span>
-                        )}
+                          )}
+                          {full && (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setTroubleshootServer(full)
+                                  setTroubleshootModalOpen(true)
+                                }}
+                                className="rounded-xl h-8 px-3 text-xs font-bold gap-1.5"
+                                title="Diagnostik DB / DNS / skema tenant"
+                              >
+                                <Wrench className="h-3.5 w-3.5" />
+                                Diagnostik
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8 rounded-xl"
+                                title="Lihat Kredensial & Endpoint"
+                                onClick={() => handleViewCredentials(full)}
+                              >
+                                <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
+                              </Button>
+                            </>
+                          )}
+                          {row.orphan && !full && (
+                            <span className="text-[11px] text-muted-foreground">Instance tidak aktif</span>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   )
@@ -1128,6 +1265,258 @@ export default function AdminInfrastructurePage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Contabo Instance Management Modal */}
+        <Dialog open={contaboModalOpen} onOpenChange={setContaboModalOpen}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg">
+                <Settings2 className="h-5 w-5 text-primary" /> Kelola Instance Contabo
+              </DialogTitle>
+              <DialogDescription>
+                {contaboRow?.displayName || contaboRow?.name}
+                {contaboRow?.tenant ? ` · ${contaboRow.tenant.name}` : ""}
+                {" · "}
+                <code className="font-mono">ID {contaboRow?.instanceId}</code>
+              </DialogDescription>
+            </DialogHeader>
+
+            {contaboDetailLoading && !contaboDetail ? (
+              <div className="py-12 flex justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="space-y-5 py-1 text-xs">
+                {/* Live detail bar */}
+                <div className="p-3 bg-muted/40 rounded-xl border grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase">Status</div>
+                    <Badge variant="outline" className={cn("mt-0.5 capitalize text-[10px] font-bold rounded-full px-2 py-0.5", contaboStatusColor(contaboDetail?.status || contaboRow?.status || ""))}>
+                      {contaboDetail?.status || contaboRow?.status || "—"}
+                    </Badge>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase">IPv4</div>
+                    <code className="text-[11px] font-mono font-bold text-foreground">{contaboDetail?.ipv4 || contaboRow?.ipv4 || "—"}</code>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase">Region</div>
+                    <div className="font-semibold text-foreground">{contaboDetail?.regionName || contaboDetail?.region || contaboRow?.regionName || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase">Paket</div>
+                    <div className="font-semibold text-foreground truncate">{contaboDetail?.productName || contaboRow?.productName || "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase">vCPU / RAM</div>
+                    <div className="font-semibold text-foreground">
+                      {(contaboDetail?.cpuCores ?? contaboRow?.cpuCores) || "—"} · {contaboDetail?.ramMb ? `${Math.round(contaboDetail.ramMb / 1024)} GB` : contaboRow?.ramMb ? `${Math.round(contaboRow.ramMb / 1024)} GB` : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase">Disk</div>
+                    <div className="font-semibold text-foreground">{(contaboDetail?.diskGb ?? contaboRow?.diskGb) ? `${contaboDetail?.diskGb ?? contaboRow?.diskGb} GB` : "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground font-semibold uppercase">Dibuat</div>
+                    <div className="font-semibold text-foreground">{contaboDetail?.createdDate ? new Date(contaboDetail.createdDate).toLocaleDateString("id-ID") : "—"}</div>
+                  </div>
+                  <div className="flex items-end">
+                    <Button variant="ghost" size="sm" onClick={refreshContaboDetail} disabled={contaboDetailLoading} className="h-7 px-2 text-[11px] gap-1.5">
+                      <RefreshCw className={cn("h-3 w-3", contaboDetailLoading && "animate-spin")} /> Refresh
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Power controls */}
+                <div>
+                  <div className="font-bold text-foreground mb-2 flex items-center gap-1.5"><Power className="h-4 w-4 text-primary" /> Kontrol Daya</div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" disabled={!!contaboActionKey} onClick={() => runContaboAction("start", {}, { successTitle: "Start" })}
+                      className="h-8 text-xs font-bold gap-1.5 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10">
+                      {contaboActionKey === "start-" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />} Start
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={!!contaboActionKey} onClick={() => runContaboAction("shutdown", {}, { successTitle: "Shutdown" })}
+                      className="h-8 text-xs font-bold gap-1.5 border-amber-500/40 text-amber-600 hover:bg-amber-500/10">
+                      {contaboActionKey === "shutdown-" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PowerOff className="h-3.5 w-3.5" />} Shutdown (ACPI)
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={!!contaboActionKey} onClick={() => runContaboAction("stop", {}, { successTitle: "Stop" })}
+                      className="h-8 text-xs font-bold gap-1.5 border-slate-500/40 text-slate-600 hover:bg-slate-500/10">
+                      {contaboActionKey === "stop-" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Square className="h-3.5 w-3.5" />} Stop (Power-off)
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={!!contaboActionKey} onClick={() => runContaboAction("restart", {}, { successTitle: "Restart" })}
+                      className="h-8 text-xs font-bold gap-1.5 border-blue-500/40 text-blue-600 hover:bg-blue-500/10">
+                      {contaboActionKey === "restart-" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />} Restart
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Snapshots */}
+                <div>
+                  <div className="font-bold text-foreground mb-2 flex items-center gap-1.5"><Camera className="h-4 w-4 text-primary" /> Snapshot ({contaboSnapshots.length})</div>
+                  <div className="flex gap-2 mb-2">
+                    <Input
+                      value={newSnapshotName}
+                      onChange={(e) => setNewSnapshotName(e.target.value)}
+                      placeholder="Nama snapshot baru..."
+                      className="h-8 text-xs rounded-lg"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={!!contaboActionKey || !newSnapshotName.trim()}
+                      onClick={() => runContaboAction("snapshot-create", { name: newSnapshotName.trim() }, { successTitle: "Snapshot" }).then(() => setNewSnapshotName(""))}
+                      className="h-8 text-xs font-bold gap-1.5 shrink-0"
+                    >
+                      {contaboActionKey === "snapshot-create-" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />} Buat
+                    </Button>
+                  </div>
+                  <div className="rounded-xl border divide-y">
+                    {contaboSnapshots.length === 0 ? (
+                      <div className="p-3 text-center text-muted-foreground text-[11px]">Belum ada snapshot.</div>
+                    ) : (
+                      contaboSnapshots.map((snap) => (
+                        <div key={snap.snapshotId} className="p-2.5 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-foreground truncate">{snap.name || snap.snapshotId}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              {snap.createdDate ? new Date(snap.createdDate).toLocaleString("id-ID") : "—"}
+                              {snap.autoDeleteDate ? ` · auto-hapus ${new Date(snap.autoDeleteDate).toLocaleDateString("id-ID")}` : ""}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <Button
+                              size="sm" variant="outline"
+                              disabled={!!contaboActionKey}
+                              onClick={() => setContaboConfirm({ kind: "rollback", snapshotId: snap.snapshotId, label: snap.name || snap.snapshotId })}
+                              className="h-7 px-2 text-[11px] font-bold gap-1 border-amber-500/40 text-amber-600 hover:bg-amber-500/10"
+                            >
+                              <History className="h-3 w-3" /> Rollback
+                            </Button>
+                            <Button
+                              size="icon" variant="outline"
+                              disabled={!!contaboActionKey}
+                              onClick={() => setContaboConfirm({ kind: "snapshot-delete", snapshotId: snap.snapshotId, label: snap.name || snap.snapshotId })}
+                              className="h-7 w-7 rounded-lg"
+                              title="Hapus snapshot"
+                            >
+                              <Trash2 className="h-3 w-3 text-rose-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* Advanced */}
+                <div>
+                  <div className="font-bold text-foreground mb-2 flex items-center gap-1.5"><Wrench className="h-4 w-4 text-primary" /> Lanjutan</div>
+                  <div className="space-y-3">
+                    {/* Rename */}
+                    <div className="flex gap-2 items-center">
+                      <Pencil className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} placeholder="Nama tampilan instance" className="h-8 text-xs rounded-lg" />
+                      <Button
+                        size="sm" variant="outline"
+                        disabled={!!contaboActionKey || !renameValue.trim() || renameValue.trim() === (contaboDetail?.displayName || contaboRow?.displayName)}
+                        onClick={() => runContaboAction("rename", { displayName: renameValue.trim() }, { successTitle: "Ubah Nama" })}
+                        className="h-8 text-xs font-bold shrink-0"
+                      >
+                        Simpan
+                      </Button>
+                    </div>
+
+                    {/* Reinstall */}
+                    <div className="flex gap-2 items-center">
+                      <HardDriveDownload className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <Select value={reinstallImageId} onValueChange={setReinstallImageId}>
+                        <SelectTrigger className="h-8 text-xs rounded-lg">
+                          <SelectValue placeholder="Pilih OS untuk reinstall..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {metaOptions.images.map((img) => (
+                            <SelectItem key={img.id} value={img.id} className="text-xs">{img.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm" variant="outline"
+                        disabled={!!contaboActionKey || !reinstallImageId}
+                        onClick={() => setContaboConfirm({ kind: "reinstall", label: metaOptions.images.find((i) => i.id === reinstallImageId)?.label || reinstallImageId })}
+                        className="h-8 text-xs font-bold shrink-0 border-rose-500/40 text-rose-600 hover:bg-rose-500/10"
+                      >
+                        Reinstall
+                      </Button>
+                    </div>
+
+                    {/* Cancel instance */}
+                    <div className="pt-2 border-t flex items-center justify-between">
+                      <span className="text-[11px] text-muted-foreground">Batalkan kontrak instance di Contabo (tidak bisa dibatalkan).</span>
+                      <Button
+                        size="sm" variant="destructive"
+                        disabled={!!contaboActionKey}
+                        onClick={() => setContaboConfirm({ kind: "cancel", label: contaboRow?.displayName || contaboRow?.name || "" })}
+                        className="h-8 text-xs font-bold gap-1.5"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Batalkan Instance
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setContaboModalOpen(false)}>Tutup</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Contabo destructive-action confirm */}
+        <AlertDialog open={!!contaboConfirm} onOpenChange={(o) => !o && setContaboConfirm(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-rose-600 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                {contaboConfirm?.kind === "rollback" && "Rollback ke snapshot?"}
+                {contaboConfirm?.kind === "snapshot-delete" && "Hapus snapshot?"}
+                {contaboConfirm?.kind === "reinstall" && "Reinstall OS?"}
+                {contaboConfirm?.kind === "cancel" && "Batalkan instance?"}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-xs">
+                {contaboConfirm?.kind === "rollback" && (
+                  <>Instance akan reboot dan seluruh perubahan data setelah snapshot <strong>{contaboConfirm.label}</strong> dibuat akan hilang.</>
+                )}
+                {contaboConfirm?.kind === "snapshot-delete" && (
+                  <>Snapshot <strong>{contaboConfirm.label}</strong> akan dihapus permanen.</>
+                )}
+                {contaboConfirm?.kind === "reinstall" && (
+                  <>Seluruh data pada disk instance akan <strong>terhapus total</strong> dan OS <strong>{contaboConfirm.label}</strong> dipasang bersih. Untuk server tenant, ini memutus database & storage-nya.</>
+                )}
+                {contaboConfirm?.kind === "cancel" && (
+                  <>Instance <strong>{contaboConfirm.label}</strong> akan dibatalkan di Contabo. Data tidak dapat dipulihkan.</>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={!!contaboActionKey} className="text-xs">Batal</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={!!contaboActionKey}
+                onClick={(e) => {
+                  e.preventDefault()
+                  if (!contaboConfirm) return
+                  if (contaboConfirm.kind === "rollback") runContaboAction("snapshot-rollback", { snapshotId: contaboConfirm.snapshotId }, { successTitle: "Rollback" })
+                  else if (contaboConfirm.kind === "snapshot-delete") runContaboAction("snapshot-delete", { snapshotId: contaboConfirm.snapshotId }, { successTitle: "Hapus Snapshot" })
+                  else if (contaboConfirm.kind === "reinstall") runContaboAction("reinstall", { imageId: reinstallImageId }, { successTitle: "Reinstall" })
+                  else if (contaboConfirm.kind === "cancel") runContaboCancel()
+                }}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold"
+              >
+                {contaboActionKey ? "Memproses..." : "Ya, Lanjutkan"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Credentials Modal */}
         <Dialog open={credModalOpen} onOpenChange={setCredModalOpen}>
