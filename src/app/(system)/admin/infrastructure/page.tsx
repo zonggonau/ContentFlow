@@ -28,6 +28,10 @@ import {
   Wifi,
   KeyRound,
   AlertTriangle,
+  ExternalLink,
+  Boxes,
+  Layers,
+  Triangle,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -67,6 +71,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
 import { AdminPageSkeleton } from "@/components/admin/admin-page-skeleton"
 import { cn } from "@/lib/utils"
@@ -125,6 +130,62 @@ interface ServerCredentials {
   s3PublicUrl: string
 }
 
+interface ContaboInstanceRow {
+  instanceId: string
+  name: string
+  displayName: string
+  status: string
+  ipv4: string
+  ipv6: string
+  region: string
+  regionName: string
+  productId: string
+  productName: string
+  kind: "VPS" | "VDS" | "Storage"
+  cpuCores: number
+  ramMb: number
+  diskGb: number
+  createdDate: string | null
+  tracked: boolean
+  serverId: string | null
+  tenant: { id: string; name: string; slug: string; plan: string } | null
+  healthStatus: string | null
+  dbHealthStatus: string | null
+  metricsSnapshot: InfrastructureServer["metricsSnapshot"] | null
+  lastHealthCheckAt: string | null
+  orphan?: boolean
+}
+
+interface VercelProjectRow {
+  id: string
+  name: string
+  framework: string | null
+  nodeVersion: string | null
+  url: string
+  latestDeploymentState: string | null
+  latestDeploymentUrl: string | null
+  latestDeploymentAt: number | null
+  createdAt: number | null
+  gitRepo: string | null
+}
+
+interface ProvidersData {
+  contabo: {
+    configured: boolean
+    available: boolean
+    counts: { vps: number; vds: number; storage: number }
+    vps: ContaboInstanceRow[]
+    vds: ContaboInstanceRow[]
+    storage: ContaboInstanceRow[]
+  }
+  vercel: {
+    configured: boolean
+    available: boolean
+    count: number
+    projects: VercelProjectRow[]
+  }
+}
+
 export default function AdminInfrastructurePage() {
   const { data: session, status } = useSession()
   const router = useRouter()
@@ -135,7 +196,10 @@ export default function AdminInfrastructurePage() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+
+  const [providers, setProviders] = useState<ProvidersData | null>(null)
+  const [providersLoading, setProvidersLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<"vps" | "vds" | "storage" | "vercel">("vps")
 
   // Modal States
   const [selectedServer, setSelectedServer] = useState<InfrastructureServer | null>(null)
@@ -180,11 +244,7 @@ export default function AdminInfrastructurePage() {
   const fetchServers = async (silent = false) => {
     if (!silent) setIsRefreshing(true)
     try {
-      const query = new URLSearchParams()
-      if (statusFilter !== "all") query.set("status", statusFilter)
-      if (searchQuery) query.set("search", searchQuery)
-
-      const res = await fetch(`/api/admin/infrastructure?${query.toString()}`)
+      const res = await fetch(`/api/admin/infrastructure`)
       if (res.ok) {
         const data = await res.json()
         setServers(data.servers || [])
@@ -205,6 +265,20 @@ export default function AdminInfrastructurePage() {
     } finally {
       setLoading(false)
       setIsRefreshing(false)
+    }
+  }
+
+  const fetchProviders = async (silent = false) => {
+    if (!silent) setProvidersLoading(true)
+    try {
+      const res = await fetch("/api/admin/infrastructure/providers")
+      if (res.ok) {
+        setProviders(await res.json())
+      }
+    } catch {
+      // Non-fatal — the tab just shows an "unavailable" state.
+    } finally {
+      setProvidersLoading(false)
     }
   }
 
@@ -248,13 +322,20 @@ export default function AdminInfrastructurePage() {
     if (isSuperAdmin) {
       fetchServers()
     }
-  }, [isSuperAdmin, statusFilter, searchQuery])
+  }, [isSuperAdmin])
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      fetchProviders()
+    }
+  }, [isSuperAdmin])
 
   // Auto-refresh monitoring every 30 seconds
   useEffect(() => {
     if (!isSuperAdmin) return
     const timer = setInterval(() => {
       fetchServers(true)
+      fetchProviders(true)
     }, 30000)
     return () => clearInterval(timer)
   }, [isSuperAdmin])
@@ -341,6 +422,297 @@ export default function AdminInfrastructurePage() {
     )
   }
 
+  const findTrackedServer = (serverId: string | null) =>
+    serverId ? servers.find((s) => s.id === serverId) || null : null
+
+  const matchesSearch = (row: ContaboInstanceRow) => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return true
+    return (
+      (row.displayName || row.name || "").toLowerCase().includes(q) ||
+      (row.ipv4 || "").toLowerCase().includes(q) ||
+      (row.productName || row.productId || "").toLowerCase().includes(q) ||
+      (row.instanceId || "").toLowerCase().includes(q) ||
+      (row.tenant?.name || "").toLowerCase().includes(q) ||
+      (row.tenant?.slug || "").toLowerCase().includes(q)
+    )
+  }
+
+  const contaboStatusColor = (s: string) => {
+    const v = (s || "").toLowerCase()
+    if (v.includes("running") || v === "ok" || v === "active") return "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+    if (v.includes("provision") || v.includes("install") || v.includes("pending") || v.includes("configuring")) return "bg-amber-500/10 text-amber-600 border-amber-500/30"
+    if (v.includes("stopped") || v.includes("suspend")) return "bg-slate-500/10 text-slate-600 border-slate-500/30"
+    if (v.includes("error") || v.includes("fail")) return "bg-rose-500/10 text-rose-600 border-rose-500/30"
+    return "bg-muted text-muted-foreground border-border"
+  }
+
+  const vercelStateColor = (s: string) => {
+    const v = (s || "").toLowerCase()
+    if (v === "ready") return "bg-emerald-500/10 text-emerald-600 border-emerald-500/30"
+    if (["building", "queued", "initializing"].includes(v)) return "bg-amber-500/10 text-amber-600 border-amber-500/30"
+    if (["error", "canceled"].includes(v)) return "bg-rose-500/10 text-rose-600 border-rose-500/30"
+    return "bg-muted text-muted-foreground border-border"
+  }
+
+  const healthPill = (h: string | null) => (
+    <div className="flex items-center gap-1.5">
+      <div
+        className={cn(
+          "h-2 w-2 rounded-full shrink-0",
+          h === "healthy" && "bg-emerald-500",
+          h === "degraded" && "bg-amber-500",
+          h === "unhealthy" && "bg-rose-500",
+          (!h || h === "unknown") && "bg-slate-400",
+        )}
+      />
+      <span className="text-xs font-semibold capitalize text-foreground">
+        {h === "healthy" ? "Sehat" : h === "degraded" ? "Degraded" : h === "unhealthy" ? "Kritis" : "Belum Dicek"}
+      </span>
+    </div>
+  )
+
+  const renderContaboTable = (rows: ContaboInstanceRow[], kindLabel: string, credentialHint: string) => {
+    const filtered = rows.filter(matchesSearch)
+    return (
+      <Card className="border-border/60 bg-card/60 backdrop-blur-sm rounded-2xl shadow-xs overflow-hidden">
+        <CardContent className="p-0 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="font-bold text-xs">Instance & Tenant</TableHead>
+                <TableHead className="font-bold text-xs">Paket & Region</TableHead>
+                <TableHead className="font-bold text-xs">Spesifikasi</TableHead>
+                <TableHead className="font-bold text-xs">Status Provider</TableHead>
+                <TableHead className="font-bold text-xs">Kesehatan SaCMS</TableHead>
+                <TableHead className="font-bold text-xs text-right">Tindakan</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {providersLoading && !providers ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-16 text-muted-foreground text-xs">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+                  </TableCell>
+                </TableRow>
+              ) : !providers?.contabo.configured ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-16 text-muted-foreground text-xs">
+                    Kredensial Contabo belum dikonfigurasi. Set <code className="bg-muted px-1 rounded font-mono">{credentialHint}</code> di environment atau Platform Settings.
+                  </TableCell>
+                </TableRow>
+              ) : !providers.contabo.available ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-16 text-muted-foreground text-xs">
+                    Gagal mengambil data dari Contabo API. Periksa kredensial atau coba perbarui lagi.
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-16 text-muted-foreground text-xs">
+                    Tidak ada instance {kindLabel} yang cocok.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((row) => {
+                  const full = findTrackedServer(row.serverId)
+                  return (
+                    <TableRow key={row.instanceId} className="hover:bg-muted/30 transition-colors">
+                      <TableCell>
+                        <div className="font-bold text-foreground text-sm flex items-center gap-2 flex-wrap">
+                          {row.displayName || row.name}
+                          {row.orphan && (
+                            <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30 text-[9px] font-black uppercase">
+                              Hilang di Provider
+                            </Badge>
+                          )}
+                          {!row.tracked && (
+                            <Badge variant="outline" className="bg-slate-500/10 text-slate-600 border-slate-500/30 text-[9px] font-black uppercase">
+                              Untracked
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                          {row.tenant ? `${row.tenant.name} · ${row.tenant.slug}` : "Tidak terhubung ke tenant"}
+                        </div>
+                        <div className="text-[11px] font-mono mt-0.5">
+                          <span className="text-primary">{row.ipv4 || "IPv4 —"}</span>
+                          <span className="text-muted-foreground"> · ID {row.instanceId}</span>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="text-xs font-medium text-foreground">{row.productName || row.productId || "—"}</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{row.regionName || row.region || "—"}</div>
+                      </TableCell>
+
+                      <TableCell>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
+                          <Cpu className="h-3.5 w-3.5 text-primary" /> {row.cpuCores || "—"} vCPU · {row.ramMb ? `${Math.round(row.ramMb / 1024)} GB` : "—"}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 font-medium">
+                          <HardDrive className="h-3.5 w-3.5 text-primary" /> {row.diskGb ? `${row.diskGb} GB` : "—"}
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <Badge variant="outline" className={cn("capitalize font-bold text-[10px] px-2.5 py-0.5 rounded-full", contaboStatusColor(row.status))}>
+                          {row.status}
+                        </Badge>
+                      </TableCell>
+
+                      <TableCell>
+                        {row.tracked ? healthPill(row.healthStatus) : <span className="text-[11px] text-muted-foreground">Tidak dipantau</span>}
+                        {row.lastHealthCheckAt && (
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            Cek: {new Date(row.lastHealthCheckAt).toLocaleTimeString("id-ID")}
+                          </p>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="text-right">
+                        {full ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => {
+                                setTroubleshootServer(full)
+                                setTroubleshootModalOpen(true)
+                              }}
+                              className="rounded-xl h-8 px-3 text-xs font-bold gap-1.5 shadow-xs"
+                            >
+                              <Wrench className="h-3.5 w-3.5" />
+                              Tindakan
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-8 w-8 rounded-xl"
+                              title="Lihat Kredensial & Endpoint"
+                              onClick={() => handleViewCredentials(full)}
+                            >
+                              <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-muted-foreground">Kelola di panel Contabo</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const renderVercelTable = () => {
+    const projects = providers?.vercel.projects || []
+    const q = searchQuery.trim().toLowerCase()
+    const filtered = q
+      ? projects.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            (p.gitRepo || "").toLowerCase().includes(q) ||
+            (p.framework || "").toLowerCase().includes(q),
+        )
+      : projects
+    return (
+      <Card className="border-border/60 bg-card/60 backdrop-blur-sm rounded-2xl shadow-xs overflow-hidden">
+        <CardContent className="p-0 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="font-bold text-xs">Project</TableHead>
+                <TableHead className="font-bold text-xs">Framework</TableHead>
+                <TableHead className="font-bold text-xs">Deployment Terakhir</TableHead>
+                <TableHead className="font-bold text-xs">Dibuat</TableHead>
+                <TableHead className="font-bold text-xs text-right">Link</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {providersLoading && !providers ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-16 text-muted-foreground text-xs">
+                    <Loader2 className="h-5 w-5 animate-spin mx-auto" />
+                  </TableCell>
+                </TableRow>
+              ) : !providers?.vercel.configured ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-16 text-muted-foreground text-xs">
+                    Token Vercel belum dikonfigurasi. Set <code className="bg-muted px-1 rounded font-mono">VERCEL_ACCESS_TOKEN</code> di environment atau isi di Platform Settings.
+                  </TableCell>
+                </TableRow>
+              ) : !providers.vercel.available ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-16 text-muted-foreground text-xs">
+                    Gagal memuat project dari Vercel API. Periksa token atau coba perbarui lagi.
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-16 text-muted-foreground text-xs">
+                    Tidak ada project Vercel yang cocok.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((p) => (
+                  <TableRow key={p.id} className="hover:bg-muted/30 transition-colors">
+                    <TableCell>
+                      <div className="font-bold text-foreground text-sm">{p.name}</div>
+                      {p.gitRepo && <div className="text-xs text-muted-foreground font-mono mt-0.5">{p.gitRepo}</div>}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground capitalize">
+                      {p.framework || "—"}
+                      {p.nodeVersion ? ` · Node ${p.nodeVersion}` : ""}
+                    </TableCell>
+                    <TableCell>
+                      {p.latestDeploymentState ? (
+                        <Badge variant="outline" className={cn("text-[10px] font-bold rounded-full px-2.5 py-0.5 capitalize", vercelStateColor(p.latestDeploymentState))}>
+                          {p.latestDeploymentState}
+                        </Badge>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">Belum ada</span>
+                      )}
+                      {p.latestDeploymentAt && (
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {new Date(p.latestDeploymentAt).toLocaleString("id-ID")}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {p.createdAt ? new Date(p.createdAt).toLocaleDateString("id-ID") : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {p.url && (
+                          <Button asChild variant="outline" size="icon" className="h-8 w-8 rounded-xl" title="Buka situs">
+                            <a href={p.url} target="_blank" rel="noreferrer">
+                              <Globe className="h-3.5 w-3.5" />
+                            </a>
+                          </Button>
+                        )}
+                        <Button asChild variant="outline" size="icon" className="h-8 w-8 rounded-xl" title="Buka di Vercel">
+                          <a href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
     <div className="flex flex-1 flex-col w-full">
       <div className="p-4 md:p-6 lg:p-8 w-full max-w-7xl mx-auto space-y-6">
@@ -363,14 +735,14 @@ export default function AdminInfrastructurePage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => fetchServers()} 
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { fetchServers(); fetchProviders() }}
               disabled={isRefreshing}
               className="gap-2 text-xs h-9 rounded-xl border-border/80"
             >
-              <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin text-primary")} /> 
+              <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin text-primary")} />
               {isRefreshing ? "Memperbarui..." : "Perbarui Data"}
             </Button>
 
@@ -432,179 +804,81 @@ export default function AdminInfrastructurePage() {
           </Card>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Cari tenant, IP, hostname..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 text-xs rounded-xl"
-            />
-          </div>
-
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-48 text-xs rounded-xl">
-              <SelectValue placeholder="Status Filter" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Semua Status</SelectItem>
-              <SelectItem value="active">Active (Normal)</SelectItem>
-              <SelectItem value="provisioning">Provisioning / Boot</SelectItem>
-              <SelectItem value="error">Error / Gangguan</SelectItem>
-              <SelectItem value="destroyed">Destroyed (Nonaktif)</SelectItem>
-            </SelectContent>
-          </Select>
+        {/* Search + Provider Tabs */}
+        <div className="relative w-full sm:w-96">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Cari instance, tenant, IP, project..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 text-xs rounded-xl"
+          />
         </div>
 
-        {/* Server List Table */}
-        <Card className="border-border/60 bg-card/60 backdrop-blur-sm rounded-2xl shadow-xs overflow-hidden">
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead className="font-bold text-xs">Tenant & Identitas Server</TableHead>
-                  <TableHead className="font-bold text-xs">Spesifikasi & Region</TableHead>
-                  <TableHead className="font-bold text-xs">Endpoint Layanan</TableHead>
-                  <TableHead className="font-bold text-xs">Status Server</TableHead>
-                  <TableHead className="font-bold text-xs">Kesehatan Layanan</TableHead>
-                  <TableHead className="font-bold text-xs text-right">Tindakan & Troubleshooting</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {servers.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-16 text-muted-foreground text-xs">
-                      Tidak ada server dedicated yang sesuai dengan kriteria pencarian.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  servers.map((server) => {
-                    const isHealthChecking = actionLoadingKey === `${server.id}-health-check`
-                    const isRestarting = actionLoadingKey === `${server.id}-restart`
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
+          <TabsList className="w-full sm:w-auto flex-wrap h-auto">
+            <TabsTrigger value="vps" className="text-xs gap-1.5">
+              <Server className="h-3.5 w-3.5" /> VPS
+              {providers && (
+                <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px] font-bold">
+                  {providers.contabo.counts.vps}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="vds" className="text-xs gap-1.5">
+              <Boxes className="h-3.5 w-3.5" /> VDS
+              {providers && (
+                <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px] font-bold">
+                  {providers.contabo.counts.vds}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="storage" className="text-xs gap-1.5">
+              <Layers className="h-3.5 w-3.5" /> Storage
+              {providers && (
+                <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px] font-bold">
+                  {providers.contabo.counts.storage}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="vercel" className="text-xs gap-1.5">
+              <Triangle className="h-3 w-3 fill-current" /> Hosting Vercel
+              {providers && (
+                <Badge variant="secondary" className="ml-1 h-4 px-1.5 text-[10px] font-bold">
+                  {providers.vercel.count}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
 
-                    return (
-                      <TableRow key={server.id} className="hover:bg-muted/30 transition-colors">
-                        <TableCell>
-                          <div className="font-bold text-foreground text-sm">{server.tenant?.name || "Unknown Workspace"}</div>
-                          <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                            {server.tenant?.slug} &bull; <span className="text-primary">{server.ipv4 || "IPv4 Menunggu..."}</span>
-                          </div>
-                        </TableCell>
+          <TabsContent value="vps" className="mt-4">
+            <p className="text-xs text-muted-foreground mb-3">
+              Semua Cloud VPS di akun Contabo. Baris yang terhubung ke tenant menampilkan status kesehatan SaCMS &amp; aksi troubleshooting.
+            </p>
+            {renderContaboTable(providers?.contabo.vps || [], "VPS", "CONTABO_CLIENT_ID / CONTABO_CLIENT_SECRET / CONTABO_API_USER / CONTABO_API_PASSWORD")}
+          </TabsContent>
 
-                        <TableCell>
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
-                            <Cpu className="h-3.5 w-3.5 text-primary" /> {server.cpuCount} Cores &bull; {server.ramMb / 1024} GB RAM
-                          </div>
-                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-0.5 font-medium">
-                            <HardDrive className="h-3.5 w-3.5 text-primary" /> {server.diskGb} GB NVMe &bull; {server.region}
-                          </div>
-                          {server.status === "active" && (
-                            <div className="mt-1.5 pt-1 border-t border-border/40 space-y-1">
-                              <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                                <span>CPU: {server.metricsSnapshot?.cpuUsagePercent != null ? `${server.metricsSnapshot.cpuUsagePercent}%` : "Tidak tersedia"}</span>
-                                <span>RAM: {server.metricsSnapshot?.ramUsagePercent != null ? `${server.metricsSnapshot.ramUsagePercent}%` : "Tidak tersedia"}</span>
-                              </div>
-                              {server.metricsSnapshot?.ramUsagePercent != null && (
-                                <div className="w-full bg-muted h-1 rounded-full overflow-hidden flex">
-                                  <div
-                                    className="bg-emerald-500 h-full rounded-full transition-all"
-                                    style={{ width: `${Math.min(100, server.metricsSnapshot.ramUsagePercent)}%` }}
-                                  />
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
+          <TabsContent value="vds" className="mt-4">
+            <p className="text-xs text-muted-foreground mb-3">
+              Cloud VDS (Dedicated CPU) di akun Contabo.
+            </p>
+            {renderContaboTable(providers?.contabo.vds || [], "VDS", "CONTABO_CLIENT_ID / CONTABO_CLIENT_SECRET / CONTABO_API_USER / CONTABO_API_PASSWORD")}
+          </TabsContent>
 
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1 text-[11px] font-mono">
-                              <Database className="h-3 w-3 text-blue-500 shrink-0" />
-                              <span className="truncate max-w-[170px]">{server.dbHost || "db-pending.sacms.cloud"}</span>
-                            </div>
-                            <div className="flex items-center gap-1 text-[11px] font-mono">
-                              <HardDrive className="h-3 w-3 text-amber-500 shrink-0" />
-                              <span className="truncate max-w-[170px]">{server.mediaHost || "media-pending.sacms.cloud"}</span>
-                            </div>
-                          </div>
-                        </TableCell>
+          <TabsContent value="storage" className="mt-4">
+            <p className="text-xs text-muted-foreground mb-3">
+              Instance VPS Storage / object storage appliance di akun Contabo.
+            </p>
+            {renderContaboTable(providers?.contabo.storage || [], "Storage", "CONTABO_CLIENT_ID / CONTABO_CLIENT_SECRET / CONTABO_API_USER / CONTABO_API_PASSWORD")}
+          </TabsContent>
 
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              "capitalize font-bold text-[10px] px-2.5 py-0.5 rounded-full",
-                              server.status === "active" && "bg-emerald-500/10 text-emerald-600 border-emerald-500/30",
-                              server.status === "provisioning" && "bg-amber-500/10 text-amber-600 border-amber-500/30",
-                              server.status === "configuring" && "bg-blue-500/10 text-blue-600 border-blue-500/30",
-                              server.status === "error" && "bg-rose-500/10 text-rose-600 border-rose-500/30",
-                              server.status === "destroyed" && "bg-muted text-muted-foreground border-muted"
-                            )}
-                          >
-                            {server.status}
-                          </Badge>
-                        </TableCell>
-
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <div
-                              className={cn(
-                                "h-2 w-2 rounded-full shrink-0",
-                                server.healthStatus === "healthy" && "bg-emerald-500 shadow-xs shadow-emerald-500/50",
-                                server.healthStatus === "degraded" && "bg-amber-500 shadow-xs shadow-amber-500/50",
-                                server.healthStatus === "unhealthy" && "bg-rose-500 shadow-xs shadow-rose-500/50",
-                                server.healthStatus === "unknown" && "bg-slate-400"
-                              )}
-                            />
-                            <span className="text-xs font-semibold capitalize text-foreground">
-                              {server.healthStatus === "healthy" ? "Sehat" : server.healthStatus === "degraded" ? "Degraded" : server.healthStatus === "unhealthy" ? "Kritis" : "Belum Dicek"}
-                            </span>
-                          </div>
-                          {server.lastHealthCheckAt && (
-                            <p className="text-[10px] text-muted-foreground mt-0.5">
-                              Cek: {new Date(server.lastHealthCheckAt).toLocaleTimeString("id-ID")}
-                            </p>
-                          )}
-                        </TableCell>
-
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Diagnostic & Action Hub Button */}
-                            <Button
-                              variant="default"
-                              size="sm"
-                              onClick={() => {
-                                setTroubleshootServer(server)
-                                setTroubleshootModalOpen(true)
-                              }}
-                              className="rounded-xl h-8 px-3 text-xs font-bold gap-1.5 shadow-xs"
-                            >
-                              <Wrench className="h-3.5 w-3.5" />
-                              Tindakan
-                            </Button>
-
-                            {/* View Credentials */}
-                            <Button
-                              variant="outline"
-                              size="icon"
-                              className="h-8 w-8 rounded-xl"
-                              title="Lihat Kredensial & Endpoint"
-                              onClick={() => handleViewCredentials(server)}
-                            >
-                              <KeyRound className="h-3.5 w-3.5 text-muted-foreground" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+          <TabsContent value="vercel" className="mt-4">
+            <p className="text-xs text-muted-foreground mb-3">
+              Seluruh project hosting di akun / tim Vercel beserta status deployment terakhirnya.
+            </p>
+            {renderVercelTable()}
+          </TabsContent>
+        </Tabs>
 
         {/* Troubleshooting & Actions Modal */}
         <Dialog open={troubleshootModalOpen} onOpenChange={setTroubleshootModalOpen}>

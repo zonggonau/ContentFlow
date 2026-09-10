@@ -625,6 +625,114 @@ function getRequestHeaders(token: string) {
 // ─── COMPUTE INSTANCES API (Contabo openapi.json: /v1/compute/*) ───
 // ══════════════════════════════════════════════════════════════════════
 
+export type ContaboInstanceKind = "VPS" | "VDS" | "Storage"
+
+export interface ContaboInstanceListItem {
+  instanceId: string
+  name: string
+  displayName: string
+  status: string
+  ipv4: string
+  ipv6: string
+  region: string
+  regionName: string
+  productId: string
+  productName: string
+  /** Derived VPS / VDS / Storage bucket — from productId (authoritative,
+   *  via CONTABO_PLANS) with a productName heuristic fallback for plans we
+   *  don't have a definition for (older/legacy Contabo products). */
+  kind: ContaboInstanceKind
+  cpuCores: number
+  ramMb: number
+  diskGb: number
+  createdDate: string | null
+}
+
+/** productId → VPS/VDS/Storage, built once from the plan catalogue. */
+const CONTABO_PRODUCT_TYPE_BY_ID: Record<string, ContaboInstanceKind> = Object.values(CONTABO_PLANS).reduce(
+  (acc, plan) => {
+    acc[plan.productId] = plan.type
+    return acc
+  },
+  {} as Record<string, ContaboInstanceKind>,
+)
+
+function deriveContaboKind(productId?: string, productName?: string): ContaboInstanceKind {
+  if (productId && CONTABO_PRODUCT_TYPE_BY_ID[productId]) return CONTABO_PRODUCT_TYPE_BY_ID[productId]
+  const haystack = `${productName || ""}`.toLowerCase()
+  if (haystack.includes("vds")) return "VDS"
+  if (haystack.includes("storage")) return "Storage"
+  return "VPS"
+}
+
+/**
+ * List every compute instance on the Contabo account (all pages), normalised
+ * and bucketed into VPS / VDS / Storage. Read-only; used by the admin
+ * infrastructure dashboard to show the full provider-side picture, not just
+ * the instances SaCMS provisioned itself.
+ *
+ * Returns an empty array (never throws) when Contabo isn't configured or the
+ * API call fails — the caller surfaces "not configured" / "unavailable"
+ * separately via isContaboConfigured().
+ */
+export async function listContaboInstances(): Promise<ContaboInstanceListItem[]> {
+  if (!isContaboConfigured()) return []
+
+  try {
+    const token = await getAccessToken()
+    const creds = getContaboCredentials()
+    const items: ContaboInstanceListItem[] = []
+    let page = 1
+    const size = 100
+
+    // Hard cap at 20 pages (2000 instances) so a malformed pagination
+    // response can't spin this forever.
+    while (page <= 20) {
+      const res = await fetch(`${creds.apiUrl}?page=${page}&size=${size}`, {
+        method: "GET",
+        headers: getRequestHeaders(token),
+      })
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText)
+        console.warn(`[Contabo API] listContaboInstances page ${page} failed (${res.status}): ${errText}`)
+        break
+      }
+      const body = await res.json()
+      const data: any[] = Array.isArray(body?.data) ? body.data : []
+      for (const inst of data) {
+        const productId = inst.productId || ""
+        const productName = inst.productName || inst.productType || ""
+        items.push({
+          instanceId: String(inst.instanceId ?? inst.id ?? ""),
+          name: inst.name || inst.displayName || `instance-${inst.instanceId}`,
+          displayName: inst.displayName || inst.name || "",
+          status: inst.status || "unknown",
+          ipv4: inst.ipConfig?.v4?.ip || inst.ipv4 || "",
+          ipv6: inst.ipConfig?.v6?.ip || inst.ipv6 || "",
+          region: inst.region || "",
+          regionName: inst.regionName || inst.region || "",
+          productId,
+          productName: productName || productId,
+          kind: deriveContaboKind(productId, productName),
+          cpuCores: inst.cpuCores || 0,
+          ramMb: inst.ramMb || 0,
+          diskGb: inst.diskMb ? Math.round(inst.diskMb / 1024) : 0,
+          createdDate: inst.createdDate || null,
+        })
+      }
+
+      const totalPages = Number(body?._pagination?.totalPages ?? body?.pagination?.totalPages ?? 1)
+      if (!Number.isFinite(totalPages) || page >= totalPages || data.length === 0) break
+      page += 1
+    }
+
+    return items
+  } catch (err: any) {
+    console.warn("[Contabo API] listContaboInstances error:", err?.message || err)
+    return []
+  }
+}
+
 /**
  * Order & Create a new VPS instance on Contabo
  */

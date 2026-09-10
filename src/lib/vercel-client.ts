@@ -261,3 +261,82 @@ export async function listVercelProjects(): Promise<{ id: string; name: string; 
     url: p.alias?.[0]?.domain ? `https://${p.alias[0].domain}` : ""
   }))
 }
+
+export function isVercelConfigured(): Promise<boolean> {
+  return getVercelToken().then((t) => Boolean(t))
+}
+
+export interface VercelProjectSummary {
+  id: string
+  name: string
+  framework: string | null
+  nodeVersion: string | null
+  url: string
+  latestDeploymentState: string | null
+  latestDeploymentUrl: string | null
+  latestDeploymentAt: number | null
+  createdAt: number | null
+  gitRepo: string | null
+}
+
+/**
+ * Richer project listing for the admin infrastructure dashboard's "Vercel
+ * Hosting" tab — every project on the account/team, with its latest
+ * production deployment state. Read-only; returns [] (never throws) when no
+ * Vercel token is configured or the API call fails.
+ */
+export async function listVercelProjectsDetailed(): Promise<VercelProjectSummary[]> {
+  const token = await getVercelToken()
+  if (!token) return []
+
+  try {
+    const headers = await getVercelHeaders()
+    const teamParam = getTeamQuery().replace("?", "&")
+    const out: VercelProjectSummary[] = []
+    let until: string | undefined
+    let guard = 0
+
+    while (guard < 20) {
+      guard += 1
+      const pageParam = until ? `&until=${until}` : ""
+      const res = await fetch(
+        `${VERCEL_API_BASE}/v9/projects?limit=100${teamParam}${pageParam}`,
+        { headers },
+      )
+      if (!res.ok) {
+        console.warn(`[Vercel Client] listVercelProjectsDetailed failed (${res.status})`)
+        break
+      }
+      const data = await res.json()
+      for (const p of data.projects || []) {
+        const latest = p.latestDeployments?.[0] || p.targets?.production || null
+        out.push({
+          id: p.id,
+          name: p.name,
+          framework: p.framework ?? null,
+          nodeVersion: p.nodeVersion ?? null,
+          url: p.alias?.[0]?.domain
+            ? `https://${p.alias[0].domain}`
+            : latest?.url
+              ? `https://${latest.url}`
+              : "",
+          latestDeploymentState: latest?.readyState || latest?.state || null,
+          latestDeploymentUrl: latest?.url ? `https://${latest.url}` : null,
+          latestDeploymentAt: latest?.createdAt ?? latest?.buildingAt ?? null,
+          createdAt: p.createdAt ?? null,
+          gitRepo: p.link?.repo
+            ? `${p.link.org || p.link.owner || ""}/${p.link.repo}`.replace(/^\//, "")
+            : null,
+        })
+      }
+      const next = data.pagination?.next
+      if (!next) break
+      until = String(next)
+    }
+
+    return out
+  } catch (err: any) {
+    console.warn("[Vercel Client] listVercelProjectsDetailed error:", err?.message || err)
+    return []
+  }
+}
