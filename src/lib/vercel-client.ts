@@ -158,6 +158,53 @@ export async function getDeploymentStatus(deploymentId: string): Promise<{ state
   }
 }
 
+export type VercelEnvTarget = "production" | "preview" | "development"
+
+export interface VercelEnvResult {
+  key: string
+  targets: VercelEnvTarget[]
+  type: "encrypted" | "plain" | "sensitive"
+  created: boolean
+  updated: boolean
+  simulated?: boolean
+}
+
+/**
+ * Create or update an environment variable on a Vercel project (upsert).
+ * Secret values are stored `encrypted`; anything prefixed `NEXT_PUBLIC_` is
+ * stored `plain` since it's exposed to the browser anyway.
+ */
+export async function upsertVercelProjectEnv(
+  projectId: string,
+  key: string,
+  value: string,
+  targets: VercelEnvTarget[] = ["production", "preview", "development"],
+): Promise<VercelEnvResult> {
+  const type: VercelEnvResult["type"] = key.startsWith("NEXT_PUBLIC_") ? "plain" : "encrypted"
+  const token = await getVercelToken()
+  if (!token) {
+    if (!isMockAllowed("vercel", false)) requireCredentialOutsideMock("vercel", "VERCEL_ACCESS_TOKEN")
+    return { key, targets, type, created: true, updated: false, simulated: true }
+  }
+
+  const res = await fetch(
+    `${VERCEL_API_BASE}/v10/projects/${projectId}/env${getTeamQuery() ? `${getTeamQuery()}&upsert=true` : "?upsert=true"}`,
+    {
+      method: "POST",
+      headers: await getVercelHeaders(),
+      body: JSON.stringify({ key, value, type, target: targets }),
+    },
+  )
+
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(`Failed to set Vercel env "${key}": ${data.error?.message || data.message || res.statusText}`)
+  }
+
+  const created = data?.created?.key === key || data?.key === key
+  return { key, targets, type, created: !!created, updated: !created }
+}
+
 /**
  * Add a custom domain to a Vercel project
  */

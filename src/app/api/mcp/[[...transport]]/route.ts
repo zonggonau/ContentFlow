@@ -19,7 +19,7 @@ import { db, getTenantDb } from "@/lib/database"
 import { NextResponse } from "next/server"
 import { createHash } from "crypto"
 import { AsyncLocalStorage } from "async_hooks"
-import { deployToVercel, getDeploymentStatus, addDomainToProject, getDomainConfig } from "@/lib/vercel-client"
+import { deployToVercel, getDeploymentStatus, addDomainToProject, getDomainConfig, upsertVercelProjectEnv, type VercelEnvTarget } from "@/lib/vercel-client"
 import { provisionTenantInfrastructure } from "@/lib/infrastructure/provisioner"
 import { FIELD_TYPES, FIELD_CATEGORIES } from "@/lib/field-types"
 import { hashMemberPassword } from "@/lib/member-auth"
@@ -2056,6 +2056,116 @@ export default async function NewsPage() {
           }
         }
       }
+    )
+
+    // ── add_vercel_env ──────────────────────────────────────────────────────
+    server.registerTool(
+      "add_vercel_env",
+      {
+        title: "Add / Update Vercel Environment Variable",
+        description:
+          "Create or update an environment variable on this workspace's Vercel project (upsert). " +
+          "Values are stored encrypted unless the key is prefixed NEXT_PUBLIC_. The variable also " +
+          "shows up in the dashboard's Environment tab and is re-applied on the next SaCMS deploy. " +
+          "Note: an existing Vercel deployment must be redeployed for the change to take effect.",
+        inputSchema: {
+          key: z
+            .string()
+            .regex(/^[A-Z_][A-Z0-9_]*$/, "Use UPPER_SNAKE_CASE (letters, digits, underscore; not starting with a digit)")
+            .describe("Variable name, e.g. STRIPE_SECRET_KEY or NEXT_PUBLIC_ANALYTICS_ID"),
+          value: z.string().describe("Variable value"),
+          projectId: z
+            .string()
+            .optional()
+            .describe("Vercel Project ID. Defaults to this workspace's linked Vercel project."),
+          targets: z
+            .array(z.enum(["production", "preview", "development"]))
+            .optional()
+            .describe("Which environments to apply to. Default: all three."),
+        },
+      },
+      async ({ key, value, projectId, targets }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+
+        if (["NEXT_PUBLIC_SACMS_API_URL", "NEXT_PUBLIC_SACMS_TENANT", "SACMS_API_KEY"].includes(key)) {
+          return {
+            content: [{ type: "text" as const, text: `❌ "${key}" adalah variabel sistem SaCMS dan tidak bisa ditimpa.` }],
+            isError: true,
+          }
+        }
+
+        try {
+          let resolvedProjectId = projectId
+          if (!resolvedProjectId && auth.tenantId) {
+            const row = await db.setting.findFirst({ where: { key: `${auth.tenantId}_vercelProjectId` } })
+            resolvedProjectId = row?.value || undefined
+          }
+          if (!resolvedProjectId) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: "❌ Tidak ada Vercel Project ID. Deploy dulu dengan deploy_to_vercel, atau berikan parameter projectId.",
+              }],
+              isError: true,
+            }
+          }
+
+          const result = await upsertVercelProjectEnv(
+            resolvedProjectId,
+            key,
+            value,
+            targets as VercelEnvTarget[] | undefined,
+          )
+
+          // Mirror into the tenant's stored custom env set so the dashboard
+          // Environment tab stays in sync and the next SaCMS deploy re-applies it.
+          if (auth.tenantId) {
+            try {
+              const settingKey = `${auth.tenantId}_frontend_env_vars`
+              const existing = await db.setting.findUnique({ where: { key: settingKey } })
+              let vars: { key: string; value: string }[] = []
+              if (existing?.value) {
+                try {
+                  const parsed = JSON.parse(existing.value)
+                  if (Array.isArray(parsed)) vars = parsed.filter((v) => v && typeof v.key === "string")
+                } catch { /* ignore */ }
+              }
+              const idx = vars.findIndex((v) => v.key === key)
+              if (idx >= 0) vars[idx].value = value
+              else vars.push({ key, value })
+              await db.setting.upsert({
+                where: { key: settingKey },
+                update: { value: JSON.stringify(vars) },
+                create: { key: settingKey, tenantId: auth.tenantId, value: JSON.stringify(vars) },
+              })
+            } catch (err) {
+              console.warn("[MCP add_vercel_env] Failed to mirror env var into settings:", err)
+            }
+          }
+
+          return {
+            content: [{
+              type: "text" as const,
+              text: JSON.stringify({
+                key: result.key,
+                type: result.type,
+                targets: result.targets,
+                action: result.simulated ? "simulated" : result.created ? "created" : "updated",
+                projectId: resolvedProjectId,
+                message: result.simulated
+                  ? "⚠️ VERCEL_ACCESS_TOKEN tidak diset — perubahan disimulasikan (tersimpan di dashboard, belum di Vercel)."
+                  : `✅ Variabel "${key}" ${result.created ? "dibuat" : "diperbarui"} di Vercel. Redeploy project agar berlaku.`,
+              }, null, 2),
+            }],
+          }
+        } catch (err: any) {
+          return {
+            content: [{ type: "text" as const, text: `❌ Gagal set env di Vercel: ${err.message}` }],
+            isError: true,
+          }
+        }
+      },
     )
 
     // ── get_contabo_infrastructure_status ────────────────────────────────────

@@ -391,7 +391,7 @@ Once the IDE's agent has the `sacms` tools available, a normal chat prompt — n
 - Schema: `create_content_type`, `update_content_type`, `delete_content_type`, `create_single_type`, `create_component`, `list_field_types`, `get_full_schema`.
 - Content: `create_content_entry`, `update_content_entry`, `query_content`, `get_content_entry`.
 - Members & webhooks: `create_member`, `list_members`, `create_webhook`, `test_webhook`.
-- Infrastructure & deploy: `deploy_to_vercel`, `get_vercel_deployment_status`, `configure_vercel_domain`, `provision_contabo_vps`, `get_contabo_infrastructure_status`.
+- Infrastructure & deploy: `deploy_to_vercel`, `get_vercel_deployment_status`, `configure_vercel_domain`, `add_vercel_env`, `provision_contabo_vps`, `get_contabo_infrastructure_status`.
 
 The agent still operates strictly within the token's tenant and permission scope — it cannot see or touch another tenant's data, and a read-only token cannot call the `create_*`/`update_*`/`delete_*`/`deploy_*` tools.
 

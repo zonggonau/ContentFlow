@@ -226,6 +226,7 @@ const MCP_TOOLS_CATALOG: McpToolDoc[] = [
   { name: "deploy_to_vercel", category: "hosting", description: "Deploy file source code website/frontend langsung ke Vercel Serverless hosting. Mengembalikan URL deployment produksi.", inputs: ["projectName", "files", "envVars"] },
   { name: "get_vercel_deployment_status", category: "hosting", description: "Mengecek progres build, status ready, dan URL live dari sebuah deployment Vercel.", inputs: ["deploymentId"] },
   { name: "configure_vercel_domain", category: "hosting", description: "Menghubungkan dan memverifikasi domain kustom pada sebuah project Vercel, dengan diagnostik DNS.", inputs: ["projectId", "domain"] },
+  { name: "add_vercel_env", category: "hosting", description: "Membuat / memperbarui environment variable pada project Vercel workspace ini (upsert). Nilai dienkripsi kecuali diawali NEXT_PUBLIC_. Ikut tampil di tab Environment dashboard.", inputs: ["key", "value", "projectId?", "targets?"] },
   { name: "get_contabo_infrastructure_status", category: "hosting", description: "Memeriksa status kesehatan appliance VPS Contabo dedicated — alamat IP, spek CPU/RAM, dan status PostgreSQL/MinIO.", inputs: [] },
   { name: "provision_contabo_vps", category: "hosting", description: "Menjalankan provisioning otomatis VPS Contabo dedicated (PostgreSQL 17, Redis, MinIO S3) untuk workspace tier VPS berbayar.", inputs: ["plan", "region"] },
 ]
