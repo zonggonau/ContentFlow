@@ -316,6 +316,34 @@ export async function deleteTenantStorage(tenantSlug: string): Promise<void> {
 }
 
 /**
+ * Read a stored object's bytes, regardless of whether it lives in R2/S3 or
+ * on local disk — used by /api/media/serve, which is the URL every upload
+ * falls back to whenever no public bucket URL is configured (see
+ * buildUrl()). Without this, a file actually stored in R2 but referenced
+ * via the local-only serve route would 404 forever: the object exists in
+ * the bucket, but /api/media/serve used to only ever look on local disk.
+ */
+export async function readFromStorage(storageKey: string): Promise<{ buffer: Buffer; contentType?: string } | null> {
+  const tenantSlug = extractTenantSlug(storageKey)
+  const { s3, bucket, isCustom } = await getS3Client(tenantSlug || undefined)
+
+  if (isCustom || (await isR2Configured())) {
+    try {
+      const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: storageKey }))
+      if (!res.Body) return null
+      const buffer = Buffer.from(await (res.Body as any).transformToByteArray())
+      return { buffer, contentType: res.ContentType }
+    } catch {
+      return null
+    }
+  }
+
+  const fullPath = path.join(process.cwd(), "public", storageKey)
+  if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) return null
+  return { buffer: fs.readFileSync(fullPath) }
+}
+
+/**
  * Generate a presigned URL for private R2 objects.
  */
 export async function generatePresignedUrl(storageKey: string, expiresIn = 3600): Promise<string> {

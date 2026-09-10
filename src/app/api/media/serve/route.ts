@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { db } from "@/lib/database"
 import { resolveWithinBase, SsrfError } from "@/lib/safe-url"
-import fs from "fs"
+import { readFromStorage } from "@/lib/r2"
 import path from "path"
 
 /**
@@ -44,26 +44,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 })
     }
 
-    // 3. Serve the file — resolve inside public/upload/<tenantSlug>/ only,
-    //    so a `key` containing `..` can't escape the tenant's own directory.
+    // 3. Reject any `key` that could escape the tenant's own directory
+    //    before it's used against either local disk or the storage bucket.
     const tenantBase = path.join(process.cwd(), "public", "upload", tenantSlug)
-    let fullPath: string
     try {
-      fullPath = resolveWithinBase(tenantBase, ...parts.slice(2))
+      resolveWithinBase(tenantBase, ...parts.slice(2))
     } catch (e) {
       if (e instanceof SsrfError) {
         return NextResponse.json({ error: "Invalid key" }, { status: 400 })
       }
       throw e
     }
-    if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+
+    // 4. Read the object wherever it actually lives — local disk, or R2/S3
+    //    if this tenant/instance is storage-configured. Uploads that went
+    //    to R2 without a public bucket URL configured are referenced by
+    //    this exact route (see buildUrl() in lib/r2.ts), so it must be able
+    //    to fetch from R2 too, not just local disk.
+    const stored = await readFromStorage(key)
+    if (!stored) {
       return NextResponse.json({ error: "File not found" }, { status: 404 })
     }
 
-    const fileBuffer = fs.readFileSync(fullPath)
-    
-    // Determine content type (basic)
-    const ext = path.extname(fullPath).toLowerCase()
+    const ext = path.extname(key).toLowerCase()
     const contentTypeMap: Record<string, string> = {
       ".jpg": "image/jpeg",
       ".jpeg": "image/jpeg",
@@ -74,9 +77,9 @@ export async function GET(request: NextRequest) {
       ".pdf": "application/pdf",
       ".mp4": "video/mp4"
     }
-    const contentType = contentTypeMap[ext] || "application/octet-stream"
+    const contentType = stored.contentType || contentTypeMap[ext] || "application/octet-stream"
 
-    return new NextResponse(fileBuffer, {
+    return new NextResponse(new Uint8Array(stored.buffer), {
       headers: {
         "Content-Type": contentType,
         "Cache-Control": "private, max-age=3600"
