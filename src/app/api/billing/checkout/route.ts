@@ -248,6 +248,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Store addon/AI credit info in rawResponse for later processing in the
+    // webhook. Omit the field entirely for plain plan upgrades — a nullable
+    // Json column must not be written as literal `null` (Prisma rejects it).
+    const rawResponse = isAiCreditPack
+      ? { isAddon: true, addonId: planId, credits: creditAmount, type: "ai_credits" }
+      : isAddon
+        ? { isAddon, addonId: planId }
+        : undefined
+
     // Create payment transaction record
     const transaction = await db.paymentTransaction.create({
       data: {
@@ -255,10 +264,7 @@ export async function POST(request: NextRequest) {
         amount: totalAmount,
         status: 'pending',
         subscriptionId: subscription.id,
-        // Store addon/AI credit info in rawResponse for later processing in webhook
-        rawResponse: isAiCreditPack 
-          ? ({ isAddon: true, addonId: planId, credits: creditAmount, type: "ai_credits" } as any)
-          : (isAddon ? ({ isAddon, addonId: planId } as any) : null)
+        ...(rawResponse ? { rawResponse: rawResponse as any } : {}),
       },
     })
 
@@ -297,9 +303,15 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Error creating checkout session:", error)
+    const message = error instanceof Error ? error.message : String(error)
     return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
+      {
+        error:
+          process.env.NODE_ENV === "production"
+            ? "Gagal memproses transaksi checkout. Silakan coba lagi atau hubungi admin."
+            : `Checkout error: ${message}`,
+      },
+      { status: 500 },
     )
   }
 }
