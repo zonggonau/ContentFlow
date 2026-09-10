@@ -7,6 +7,12 @@ services:
       - .env
     volumes:
       - ./scripts/healthcheck.js:/app/scripts/healthcheck.js:ro
+      # Persist locally-stored media (used whenever R2/S3 isn't configured,
+      # see lib/r2.ts's uploadToLocal) across redeploys/container
+      # recreation — without this, every push that triggers a new container
+      # wipes every previously uploaded file, since it only ever lived on
+      # that one container's disk.
+      - media_uploads:/app/public/upload
     healthcheck:
       test: ["CMD", "bun", "scripts/healthcheck.js"]
       interval: 10s
@@ -96,3 +102,4 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
+  media_uploads:
