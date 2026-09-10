@@ -71,7 +71,12 @@ export default async function TenantDashboardPage({
   ] = await Promise.all([
     tenantDb.tenant.findUnique({
       where: { id: tenantId },
-      select: { _count: { select: { members: true, media: true } } }
+      select: {
+        vercelDeploymentUrl: true,
+        vercelProjectId: true,
+        customDomain: true,
+        _count: { select: { members: true, media: true } }
+      }
     }).catch(() => null),
     tenantDb.tenantContentTypeAssignment.count({ where: { tenantId } }).catch(() => 0),
     tenantDb.tenantSingleTypeAssignment.count({ where: { tenantId } }).catch(() => 0),
@@ -97,6 +102,7 @@ export default async function TenantDashboardPage({
     }).catch(() => []),
     db.user.findMany({ where: { role: "super_admin" }, select: { id: true } }).catch(() => []),
     tenantDb.member.count({ where: { tenantId } }).catch(() => 0),
+    db.setting.findUnique({ where: { key: `${tenantId}_vercelDeploymentUrl` } }).catch(() => null),
   ])
 
   const superAdminIds = new Set((superAdmins || []).map(u => u.id))
@@ -110,8 +116,16 @@ export default async function TenantDashboardPage({
 
   const totalEntries: number = entriesByStatus ? (Object.values(statusMap).reduce<number>((a, b) => Number(a) + Number(b), 0)) : 0
 
+  const vercelSettingRecord = (await db.setting.findUnique({ where: { key: `${tenantId}_vercelDeploymentUrl` } }).catch(() => null))?.value
+  const effectiveVercelUrl = tenantData?.vercelDeploymentUrl || vercelSettingRecord || null
+
   const stats = {
-    tenant: access.tenant,
+    tenant: {
+      ...access.tenant,
+      vercelDeploymentUrl: effectiveVercelUrl,
+      vercelProjectId: tenantData?.vercelProjectId || null,
+      customDomain: tenantData?.customDomain || null,
+    },
     contentTypeCount: contentTypeCount || contentTypes.length,
     singleTypeCount: singleTypeCount || 0,
     totalEntries: Number(totalEntries) || 0,

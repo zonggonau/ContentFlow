@@ -1910,6 +1910,33 @@ export default async function NewsPage() {
 
         try {
           const result = await deployToVercel(projectName, files, envVars as Record<string, string> | undefined)
+
+          if (auth.tenantId && result.url) {
+            try {
+              await Promise.all([
+                db.tenant.update({
+                  where: { id: auth.tenantId },
+                  data: {
+                    vercelDeploymentUrl: result.url,
+                    vercelProjectId: result.projectId || undefined,
+                  }
+                }),
+                db.setting.upsert({
+                  where: { key: `${auth.tenantId}_vercelDeploymentUrl` },
+                  update: { value: result.url },
+                  create: { tenantId: auth.tenantId, key: `${auth.tenantId}_vercelDeploymentUrl`, value: result.url }
+                }),
+                db.setting.upsert({
+                  where: { key: `${auth.tenantId}_vercelProjectId` },
+                  update: { value: result.projectId || "" },
+                  create: { tenantId: auth.tenantId, key: `${auth.tenantId}_vercelProjectId`, value: result.projectId || "" }
+                }),
+              ])
+            } catch (persistErr) {
+              console.warn("[MCP deploy_to_vercel] Failed to persist deployment to database:", persistErr)
+            }
+          }
+
           return {
             content: [{
               type: "text" as const,
@@ -1985,6 +2012,18 @@ export default async function NewsPage() {
         try {
           const result = await addDomainToProject(projectId, domain)
           const config = await getDomainConfig(domain)
+
+          if (auth.tenantId) {
+            try {
+              await db.setting.upsert({
+                where: { key: `${auth.tenantId}_customDomain` },
+                update: { value: domain },
+                create: { tenantId: auth.tenantId, key: `${auth.tenantId}_customDomain`, value: domain }
+              })
+            } catch (err) {
+              console.warn("[MCP configure_vercel_domain] Failed to save customDomain setting:", err)
+            }
+          }
           return {
             content: [{
               type: "text" as const,

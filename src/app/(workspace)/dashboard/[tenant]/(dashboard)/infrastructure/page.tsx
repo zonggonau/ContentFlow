@@ -39,7 +39,9 @@ import {
   Play,
   Square,
   Power,
+  Rocket,
 } from "lucide-react"
+import Link from "next/link"
 import { toast } from "sonner"
 import {
   AlertDialog,
@@ -338,6 +340,18 @@ export default function TenantInfrastructurePage() {
                   Simpan
                 </Button>
               )}
+
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="rounded-xl h-9 px-3.5 text-xs font-semibold border-border/80 cursor-pointer shrink-0"
+              >
+                <Link href={`/dashboard/${tenantSlug}/deployments`}>
+                  <Rocket className="h-3.5 w-3.5 mr-1.5 text-emerald-500" />
+                  Hosting &amp; Deployments
+                </Link>
+              </Button>
             </div>
           </div>
 

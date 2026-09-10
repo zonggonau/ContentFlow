@@ -63,14 +63,42 @@ const updateTargetSchema = z.object({
 export const GET = withStaffAuth(
   async (request, _context, { access, session }) => {
 
-    const tenantRecord = await db.tenant.findUnique({
-      where: { id: access.tenantId },
-      include: {
-        customDomains: {
-          orderBy: { createdAt: "desc" },
+    const [tenantRecord, settings, siteRecord, vpsServer] = await Promise.all([
+      db.tenant.findUnique({
+        where: { id: access.tenantId },
+        include: {
+          customDomains: {
+            orderBy: { createdAt: "desc" },
+          },
         },
-      },
-    })
+      }),
+      db.setting.findMany({
+        where: {
+          tenantId: access.tenantId,
+          key: {
+            in: [
+              `${access.tenantId}_vercelDeploymentUrl`,
+              `${access.tenantId}_vercelProjectId`,
+              `${access.tenantId}_customDomain`,
+              `${access.tenantId}_vpsDeploymentUrl`,
+            ],
+          },
+        },
+      }),
+      db.site.findFirst({
+        where: { tenantId: access.tenantId },
+        include: {
+          deployments: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
+        },
+      }),
+      db.infrastructureServer.findFirst({
+        where: { tenantId: access.tenantId, status: { in: ["active", "provisioning", "ready"] } },
+        orderBy: { createdAt: "desc" },
+      }),
+    ])
 
     if (!tenantRecord) {
       return NextResponse.json({ error: "Tenant not found" }, { status: 404 })
@@ -91,7 +119,50 @@ export const GET = withStaffAuth(
       }
     })
 
-    return NextResponse.json({ domains })
+    const vercelDeploymentUrlSetting = settings.find((s) => s.key === `${access.tenantId}_vercelDeploymentUrl`)?.value
+    const vercelProjectIdSetting = settings.find((s) => s.key === `${access.tenantId}_vercelProjectId`)?.value
+    const vercelCustomDomainSetting = settings.find((s) => s.key === `${access.tenantId}_customDomain`)?.value
+
+    const vercelUrl = tenantRecord.vercelDeploymentUrl || vercelDeploymentUrlSetting || siteRecord?.deployments?.[0]?.url || null
+    const vercelProjectId = tenantRecord.vercelProjectId || vercelProjectIdSetting || null
+    const vercelCustomDomain = vercelCustomDomainSetting || siteRecord?.customDomain || null
+
+    let vercelSubdomain: string | null = null
+    if (vercelUrl) {
+      try {
+        const parsed = new URL(vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`)
+        vercelSubdomain = parsed.hostname
+      } catch {
+        vercelSubdomain = vercelUrl.replace(/^https?:\/\//, "").replace(/\/.*$/, "")
+      }
+    }
+
+    const vercelDeployment = vercelUrl
+      ? {
+          url: vercelUrl.startsWith("http") ? vercelUrl : `https://${vercelUrl}`,
+          subdomain: vercelSubdomain,
+          projectId: vercelProjectId,
+          customDomain: vercelCustomDomain,
+          status: "ready",
+          updatedAt: tenantRecord.updatedAt,
+        }
+      : null
+
+    const vpsDeploymentUrlSetting = settings.find((s) => s.key === `${access.tenantId}_vpsDeploymentUrl`)?.value
+    const vpsDeployment = vpsServer?.ipv4
+      ? {
+          url: vpsDeploymentUrlSetting || `http://${vpsServer.ipv4}`,
+          ip: vpsServer.ipv4,
+          serverName: vpsServer.name,
+          status: vpsServer.status,
+        }
+      : null
+
+    return NextResponse.json({
+      domains,
+      vercelDeployment,
+      vpsDeployment,
+    })
   },
   { minRole: "admin" },
 )

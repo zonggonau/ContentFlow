@@ -12,8 +12,9 @@ import {
   AlertTriangle, Clock, CheckCircle2, Archive, CalendarClock,
   Eye, Key, Globe, XCircle, ArrowRight, Webhook, Activity,
   Zap, Upload, Play, BookOpen, ClipboardList, TrendingUp,
-  ChevronRight, ShieldCheck, Sparkles, Plug
+  ChevronRight, ShieldCheck, Sparkles, Plug, Copy, ExternalLink
 } from "lucide-react"
+import { toast } from "sonner"
 import Link from "next/link"
 import {
   DropdownMenu,
@@ -38,6 +39,9 @@ interface TenantStats {
     id: string
     name: string
     slug: string
+    vercelDeploymentUrl?: string | null
+    vercelProjectId?: string | null
+    customDomain?: string | null
   }
   contentTypeCount: number
   singleTypeCount: number
@@ -171,6 +175,68 @@ export default function TenantDashboardClient({
           </Button>
         </div>
       </div>
+
+      {/* Live Vercel Production Website Banner */}
+      {currentTenant?.vercelDeploymentUrl && (
+        <Card className="rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-card to-card p-4 shadow-xs overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                <Globe className="h-5 w-5" />
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-foreground">Website Frontend Live (Vercel Serverless)</span>
+                  <Badge className="bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 text-[9px] font-bold px-1.5 py-0 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    LIVE
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="text-xs md:text-sm font-mono font-bold text-foreground truncate">
+                    {currentTenant.vercelDeploymentUrl}
+                  </code>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  navigator.clipboard.writeText(currentTenant.vercelDeploymentUrl!)
+                  toast.success("Subdomain Vercel disalin ke clipboard!")
+                }}
+                className="rounded-xl h-8 px-3 text-xs font-semibold border-border/80"
+              >
+                <Copy className="h-3.5 w-3.5 mr-1" />
+                Salin Subdomain
+              </Button>
+              <a
+                href={currentTenant.vercelDeploymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center rounded-xl h-8 px-3.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs gap-1.5 transition-colors"
+              >
+                Buka Website
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className="rounded-xl h-8 px-3 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <Link href={`/dashboard/${tenantId}/deployments`}>
+                  Detail Hosting
+                  <ArrowRight className="h-3 w-3 ml-1" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* AI Spotlight Hero Card */}
       <Card className="relative overflow-hidden border-border/80 bg-gradient-to-br from-primary/10 via-purple-500/5 to-background rounded-2xl p-5 md:p-6 shadow-xs border">
