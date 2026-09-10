@@ -11,5 +11,5 @@ import { redirect } from "next/navigation"
  */
 export default async function DomainsRedirectPage({ params }: { params: Promise<{ tenant: string }> }) {
   const { tenant } = await params
-  redirect(`/dashboard/${tenant}/deployments?tab=domains`)
+  redirect(`/dashboard/${tenant}/infrastructure?tab=domains`)
 }

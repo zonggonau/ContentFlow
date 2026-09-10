@@ -62,7 +62,7 @@ const s = {
   auditLog: "Activity Log",
   subscriptions: "Plans & Billing",
   deployments: "Hosting & Deployments",
-  infrastructure: "Infrastructure & DB",
+  infrastructure: "Hosting & Infrastruktur",
   developer: "Developer & API",
   workspaceSettings: "Workspace Settings",
   switchWorkspace: "Switch Workspace",
@@ -257,13 +257,12 @@ export function TenantSidebar({ tenantId: propId, tenantSlug, tenants, isEnterpr
       label: s.groupSettings,
       items: [
         ...(isAdmin ? [
-          { title: s.deployments, href: "/deployments", icon: Rocket, matchPrefix: true, badge: "VERCEL" },
           {
             title: s.infrastructure,
             href: "/infrastructure",
-            icon: Server,
+            icon: Rocket,
             matchPrefix: true,
-            badge: effectiveHasDedicatedInfra ? "VPS" : undefined
+            badge: effectiveHasDedicatedInfra ? "VPS" : "VERCEL"
           },
           { title: s.developer, href: "/developer", icon: Code, matchPrefix: true },
           { title: s.workspaceSettings, href: "/settings", icon: Settings, matchPrefix: true },

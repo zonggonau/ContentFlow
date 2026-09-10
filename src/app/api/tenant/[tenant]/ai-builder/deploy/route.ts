@@ -396,7 +396,11 @@ export default async function HomePage() {
     ]
 
     // 3. Execute Vercel Deployment
+    const { getTenantCustomEnvVars } = await import("../../environment/route")
+    const customEnv = await getTenantCustomEnvVars(tenantId).catch(() => ({}))
     const envVars = {
+      ...customEnv,
+      // Fixed SaCMS vars always win over custom ones.
       NEXT_PUBLIC_SACMS_API_URL: origin,
       NEXT_PUBLIC_SACMS_TENANT: tenantSlug,
       SACMS_API_KEY: tokenRecord.token,

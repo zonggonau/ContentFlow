@@ -58,3 +58,4 @@ server.log
 /prisma/generated-client-new/
 /prisma/generated-client-old/
 /prisma/query_engine-*.node
+public/upload/
