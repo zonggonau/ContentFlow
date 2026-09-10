@@ -1,4 +1,5 @@
 import { db } from "@/lib/database"
+import { renderDotEnv } from "./frontend-env"
 
 export interface VpsDeployFile {
   name: string
@@ -9,6 +10,9 @@ export interface VpsDeployOptions {
   files?: VpsDeployFile[]
   domain?: string
   chatId?: string | null
+  /** Full frontend env (custom vars + fixed SACMS_* connection vars). Written
+   *  to a `.env` at the project root so the site can reach the SaCMS API. */
+  env?: Record<string, string>
 }
 
 export interface VpsDeployResult {
@@ -19,6 +23,9 @@ export interface VpsDeployResult {
   serverName?: string
   state: "READY" | "BUILDING" | "ERROR"
   error?: string
+  /** Names of the vars written into the delivered `.env` (values omitted). */
+  envFileVars?: string[]
+  deliveryFileCount?: number
   /** true when this call did NOT actually SSH/build/start anything on the VPS
    *  — it only recorded intent in Settings. Real Contabo delivery (file
    *  transfer, build, process supervision) is not implemented yet; callers
@@ -57,6 +64,18 @@ export async function deployAiWebsiteToVps(
     const tenantSlug = tenant?.slug || tenantId
     const effectiveDomain = options.domain || tenant?.customDomain
 
+    // Assemble the file set that will be delivered to the VPS once real
+    // SSH/build delivery exists — including a `.env` built from the resolved
+    // frontend env, so the site on the VPS reaches the SaCMS API the same
+    // way the Vercel deployment does.
+    const deliveryFiles: VpsDeployFile[] = [...(options.files || [])]
+    if (options.env && Object.keys(options.env).length > 0) {
+      const hasEnvFile = deliveryFiles.some((f) => f.name === ".env" || f.name === ".env.production")
+      if (!hasEnvFile) {
+        deliveryFiles.push({ name: ".env", content: renderDotEnv(options.env) })
+      }
+    }
+
     // If server is active on VPS. NOTE: the real field is `ipv4` (see the
     // InfrastructureServer Prisma model) — this used to read `serverIpv4`,
     // a field that doesn't exist on the model, so it always fell through
@@ -94,6 +113,11 @@ export async function deployAiWebsiteToVps(
         update: { value: "vps" },
         create: { tenantId, key: `${tenantId}_v0HostingProvider`, value: "vps" }
       }),
+      db.setting.upsert({
+        where: { key: `${tenantId}_vpsEnvKeys` },
+        update: { value: JSON.stringify(Object.keys(options.env || {})) },
+        create: { tenantId, key: `${tenantId}_vpsEnvKeys`, value: JSON.stringify(Object.keys(options.env || {})) }
+      }),
       effectiveDomain ? db.setting.upsert({
         where: { key: `${tenantId}_customDomain` },
         update: { value: effectiveDomain },
@@ -107,6 +131,8 @@ export async function deployAiWebsiteToVps(
       hostType: server ? "vps" : "simulation",
       vpsIp,
       serverName,
+      envFileVars: options.env ? Object.keys(options.env) : [],
+      deliveryFileCount: deliveryFiles.length,
       state: "READY",
       // Always true today — see the NOTE above deployAiWebsiteToVps. Even when
       // a real `server` record exists, no file transfer/build/process start

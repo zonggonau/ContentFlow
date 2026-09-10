@@ -1891,7 +1891,7 @@ export default async function NewsPage() {
             name: z.string().describe("File path (e.g. 'app/page.tsx', 'index.html', 'styles.css')"),
             content: z.string().describe("Raw source code content of the file")
           })).describe("Array of files to deploy"),
-          envVars: z.record(z.string(), z.string()).optional().describe("Optional environment variables for the deployment")
+          envVars: z.record(z.string(), z.string()).optional().describe("Extra env vars for this deploy, merged on top of the workspace's saved Environment vars (the SaCMS API URL/tenant/key are always injected automatically)")
         },
       },
       async ({ projectName, files, envVars }) => {
@@ -1909,7 +1909,21 @@ export default async function NewsPage() {
         }
 
         try {
-          const result = await deployToVercel(projectName, files, envVars as Record<string, string> | undefined)
+          // Assemble the workspace's full frontend env (saved Environment
+          // vars + fixed SACMS_* connection vars), then let the caller's
+          // envVars override any non-reserved key.
+          const { resolveFrontendEnv, pushEnvToVercelProject } = await import("@/lib/infrastructure/frontend-env")
+          const apiOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://sacms.cloud"
+          const resolvedEnv = await resolveFrontendEnv(auth.tenantId, auth.tenantSlug, apiOrigin)
+          const mergedEnv: Record<string, string> = { ...(envVars as Record<string, string> | undefined), ...resolvedEnv }
+
+          const result = await deployToVercel(projectName, files, mergedEnv)
+
+          if (result.projectId && !result.simulated) {
+            pushEnvToVercelProject(result.projectId, mergedEnv).catch((e) =>
+              console.warn("[MCP deploy_to_vercel] env push failed:", e),
+            )
+          }
 
           if (auth.tenantId && result.url) {
             try {
@@ -1940,7 +1954,7 @@ export default async function NewsPage() {
           return {
             content: [{
               type: "text" as const,
-              text: `🚀 Vercel Deployment Sukses!\n- Deployment ID: ${result.id}\n- Live URL: ${result.url}\n- Status: ${result.state}\n- Project: ${result.projectName || projectName}`
+              text: `🚀 Vercel Deployment Sukses!\n- Deployment ID: ${result.id}\n- Live URL: ${result.url}\n- Status: ${result.state}\n- Project: ${result.projectName || projectName}\n- Env terkirim ke Vercel: ${Object.keys(mergedEnv).join(", ")}`
             }]
           }
         } catch (err: any) {
@@ -2122,23 +2136,8 @@ export default async function NewsPage() {
           // Environment tab stays in sync and the next SaCMS deploy re-applies it.
           if (auth.tenantId) {
             try {
-              const settingKey = `${auth.tenantId}_frontend_env_vars`
-              const existing = await db.setting.findUnique({ where: { key: settingKey } })
-              let vars: { key: string; value: string }[] = []
-              if (existing?.value) {
-                try {
-                  const parsed = JSON.parse(existing.value)
-                  if (Array.isArray(parsed)) vars = parsed.filter((v) => v && typeof v.key === "string")
-                } catch { /* ignore */ }
-              }
-              const idx = vars.findIndex((v) => v.key === key)
-              if (idx >= 0) vars[idx].value = value
-              else vars.push({ key, value })
-              await db.setting.upsert({
-                where: { key: settingKey },
-                update: { value: JSON.stringify(vars) },
-                create: { key: settingKey, tenantId: auth.tenantId, value: JSON.stringify(vars) },
-              })
+              const { upsertTenantCustomEnvVar } = await import("@/lib/infrastructure/frontend-env")
+              await upsertTenantCustomEnvVar(auth.tenantId, key, value)
             } catch (err) {
               console.warn("[MCP add_vercel_env] Failed to mirror env var into settings:", err)
             }

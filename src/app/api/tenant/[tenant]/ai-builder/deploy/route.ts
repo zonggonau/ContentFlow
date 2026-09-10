@@ -155,7 +155,10 @@ export const POST = withStaffAuth(
 
     if (action === "deploy" && (target === "vps" || (target === "auto" && hostingTarget === "vps"))) {
       const { deployAiWebsiteToVps } = await import("@/lib/infrastructure/vps-deployer")
-      const vpsResult = await deployAiWebsiteToVps(tenantId, { files, domain, chatId })
+      const { resolveFrontendEnv } = await import("@/lib/infrastructure/frontend-env")
+      const vpsOrigin = req.nextUrl.origin || "http://localhost:3000"
+      const env = await resolveFrontendEnv(tenantId, tenantSlug, vpsOrigin)
+      const vpsResult = await deployAiWebsiteToVps(tenantId, { files, domain, chatId, env })
       return NextResponse.json(vpsResult)
     }
 
@@ -395,18 +398,23 @@ export default async function HomePage() {
       }
     ]
 
-    // 3. Execute Vercel Deployment
-    const { getTenantCustomEnvVars } = await import("../../environment/route")
-    const customEnv = await getTenantCustomEnvVars(tenantId).catch(() => ({}))
-    const envVars = {
-      ...customEnv,
-      // Fixed SaCMS vars always win over custom ones.
-      NEXT_PUBLIC_SACMS_API_URL: origin,
-      NEXT_PUBLIC_SACMS_TENANT: tenantSlug,
-      SACMS_API_KEY: tokenRecord.token,
-    }
+    // 3. Execute Vercel Deployment — the frontend's full env (custom vars
+    //    from the Environment tab + fixed SACMS_* connection vars) is
+    //    assembled once and shared with the VPS path (see below).
+    const { resolveFrontendEnv, pushEnvToVercelProject } = await import("@/lib/infrastructure/frontend-env")
+    const envVars = await resolveFrontendEnv(tenantId, tenantSlug, origin)
 
     const deployResult = await deployToVercel(projectName, deployFiles, envVars)
+
+    // Persist every var onto the Vercel project itself so redeploys from
+    // Vercel's own dashboard keep them, not just this one deployment.
+    if (deployResult.projectId && !deployResult.simulated) {
+      pushEnvToVercelProject(deployResult.projectId, envVars)
+        .then((r) => {
+          if (r.failed.length) console.warn("[deploy] Vercel env push partial:", r.failed)
+        })
+        .catch((e) => console.warn("[deploy] Vercel env push failed:", e))
+    }
 
     // 4. Save deployment info in database settings and tenant model
     await Promise.all([

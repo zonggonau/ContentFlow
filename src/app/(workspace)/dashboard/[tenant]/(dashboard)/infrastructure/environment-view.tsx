@@ -123,7 +123,9 @@ export function EnvironmentView({ tenantSlug }: { tenantSlug: string }) {
               <Variable className="h-4 w-4 text-primary" /> Variabel Kustom
             </CardTitle>
             <CardDescription className="text-xs">
-              Diteruskan ke build frontend Vercel. Berlaku pada <strong>deploy berikutnya</strong>.
+              Untuk <strong>frontend</strong> saja (mis. API key layanan pihak ketiga). Otomatis dikirim ke Vercel
+              (env project) atau ditulis ke <code className="font-mono">.env</code> di VPS Contabo setiap kali situs
+              di-deploy — lewat dashboard maupun MCP. Berlaku pada <strong>deploy berikutnya</strong>.
             </CardDescription>
           </div>
           <Button
