@@ -19,7 +19,7 @@ import { db, getTenantDb } from "@/lib/database"
 import { NextResponse } from "next/server"
 import { createHash } from "crypto"
 import { AsyncLocalStorage } from "async_hooks"
-import { deployToVercel, getDeploymentStatus, addDomainToProject, getDomainConfig, upsertVercelProjectEnv, type VercelEnvTarget } from "@/lib/vercel-client"
+import { deployToVercel, getDeploymentStatus, addDomainToProject, getDomainConfig, upsertVercelProjectEnv, disableVercelDeploymentProtection, type VercelEnvTarget } from "@/lib/vercel-client"
 import { provisionTenantInfrastructure } from "@/lib/infrastructure/provisioner"
 import { FIELD_TYPES, FIELD_CATEGORIES } from "@/lib/field-types"
 import { hashMemberPassword } from "@/lib/member-auth"
@@ -2161,6 +2161,64 @@ export default async function NewsPage() {
         } catch (err: any) {
           return {
             content: [{ type: "text" as const, text: `❌ Gagal set env di Vercel: ${err.message}` }],
+            isError: true,
+          }
+        }
+      },
+    )
+
+    // ── make_vercel_deployment_public ────────────────────────────────────────
+    server.registerTool(
+      "make_vercel_deployment_public",
+      {
+        title: "Make Vercel Deployment Publicly Viewable",
+        description:
+          "Turn off Vercel's 'Vercel Authentication' deployment protection on this workspace's Vercel project, so " +
+          "its deployment links (including the per-deployment URL with a random suffix, e.g. " +
+          "my-site-abc123-team.vercel.app — not just the clean production alias) can be opened by anyone with the " +
+          "link, without needing to log into Vercel. This is a project-wide security setting change — only call it " +
+          "when the user explicitly wants the deployment publicly viewable.",
+        inputSchema: {
+          projectId: z.string().optional().describe("Vercel Project ID. Defaults to this workspace's linked Vercel project."),
+        },
+      },
+      async ({ projectId }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+
+        try {
+          let resolvedProjectId = projectId
+          if (!resolvedProjectId && auth.tenantId) {
+            const row = await db.setting.findFirst({ where: { key: `${auth.tenantId}_vercelProjectId` } })
+            resolvedProjectId = row?.value || undefined
+          }
+          if (!resolvedProjectId) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: "❌ Tidak ada Vercel Project ID. Deploy dulu dengan deploy_to_vercel, atau berikan parameter projectId.",
+              }],
+              isError: true,
+            }
+          }
+
+          const result = await disableVercelDeploymentProtection(resolvedProjectId)
+          if (!result.ok) {
+            return {
+              content: [{ type: "text" as const, text: `❌ Gagal menonaktifkan proteksi di Vercel: ${result.error}` }],
+              isError: true,
+            }
+          }
+
+          return {
+            content: [{
+              type: "text" as const,
+              text: "✅ Proteksi 'Vercel Authentication' dinonaktifkan. Semua URL deployment project ini (termasuk URL per-deployment dengan akhiran acak) sekarang bisa dibuka siapa saja tanpa login Vercel.",
+            }],
+          }
+        } catch (err: any) {
+          return {
+            content: [{ type: "text" as const, text: `❌ Gagal menonaktifkan proteksi di Vercel: ${err.message}` }],
             isError: true,
           }
         }

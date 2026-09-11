@@ -127,9 +127,18 @@ export async function deployToVercel(
   }
 
   const data = await res.json()
+  // `data.url` is the unique per-deployment URL (the random-suffix hostname
+  // like project-abc123-team.vercel.app) — Vercel's "Vercel Authentication"
+  // deployment protection gates THAT hostname by default on every project
+  // that has it enabled, even for a `target: "production"` deploy like this
+  // one. `data.alias` is the assigned production alias (the clean
+  // project.vercel.app domain, or a custom domain) that Vercel protection
+  // leaves public by default — prefer it so the link we hand back is
+  // actually viewable without a Vercel login.
+  const publicUrl: string | undefined = Array.isArray(data.alias) ? data.alias[0] : undefined
   return {
     id: data.id,
-    url: data.url ? `https://${data.url}` : "",
+    url: publicUrl ? `https://${publicUrl}` : (data.url ? `https://${data.url}` : ""),
     state: data.readyState || data.state || "BUILDING",
     projectId: data.projectId,
     projectName: data.name
@@ -156,6 +165,60 @@ export async function getDeploymentStatus(deploymentId: string): Promise<{ state
     state: data.readyState || data.state || "BUILDING",
     url: data.url ? `https://${data.url}` : ""
   }
+}
+
+/**
+ * Whether the project's "Vercel Authentication" deployment protection is on
+ * (and, if so, which deployment types it covers) — read-only, used to warn
+ * the caller instead of guessing from a single deployment's response shape.
+ */
+export async function getVercelDeploymentProtectionStatus(
+  projectId: string,
+): Promise<{ protected: boolean; scope?: string } | null> {
+  const token = await getVercelToken()
+  if (!token) return null
+
+  const res = await fetch(`${VERCEL_API_BASE}/v9/projects/${projectId}${getTeamQuery()}`, {
+    headers: await getVercelHeaders(),
+  })
+  if (!res.ok) return null
+  const data = await res.json().catch(() => ({}))
+  const sso = data?.ssoProtection
+  return { protected: !!sso, scope: sso?.deploymentType }
+}
+
+/**
+ * Turn off Vercel's "Vercel Authentication" deployment protection for a
+ * project, so its deployment URLs (including the per-deployment ones with a
+ * random suffix, not just the production alias) are viewable by anyone with
+ * the link — no Vercel login required. This is a project-wide, security-
+ * relevant setting change, so it's only ever called when a caller explicitly
+ * asks for it (the `make_vercel_deployment_public` MCP tool / dashboard
+ * action) — never automatically on every deploy.
+ */
+export async function disableVercelDeploymentProtection(
+  projectId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const token = await getVercelToken()
+  if (!token) {
+    if (!isMockAllowed("vercel", false)) requireCredentialOutsideMock("vercel", "VERCEL_ACCESS_TOKEN")
+    return { ok: true }
+  }
+
+  const res = await fetch(`${VERCEL_API_BASE}/v9/projects/${projectId}${getTeamQuery()}`, {
+    method: "PATCH",
+    headers: await getVercelHeaders(),
+    // Clearing both known protection fields — Vercel's API has used
+    // `ssoProtection` (Vercel Authentication) and, on some plans,
+    // `passwordProtection` for the same "require login to view" behavior.
+    body: JSON.stringify({ ssoProtection: null, passwordProtection: null }),
+  })
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    return { ok: false, error: data.error?.message || data.message || res.statusText }
+  }
+  return { ok: true }
 }
 
 export type VercelEnvTarget = "production" | "preview" | "development"
