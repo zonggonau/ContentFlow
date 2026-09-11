@@ -93,14 +93,28 @@ export async function isR2Configured(): Promise<boolean> {
 }
 
 /**
- * Check if storage is configured for a specific tenant (Custom S3, Dedicated MinIO VPS, or Global R2).
+ * Storage policy, by plan:
+ *   - Shared-DB workspaces (free/pro/cloud — no `storageConfig` of their
+ *     own) always use SaCMS's own local disk storage, regardless of
+ *     whether a platform-wide R2 happens to be configured. Global R2 is
+ *     reserved for platform-level assets (backups, support attachments,
+ *     avatars) — a shared-tier tenant's media was never meant to depend on
+ *     it, and mixing the two made a tenant's uploads land in a bucket the
+ *     admin didn't necessarily intend for tenant content.
+ *   - VPS / VDS / Storage-tier workspaces use their own dedicated MinIO,
+ *     which infrastructure/provisioner.ts writes into `tenant.storageConfig`
+ *     automatically when their appliance is provisioned (see
+ *     `getTenantStorageConfig` above). Until that finishes, uploads fall
+ *     back to local disk rather than failing outright.
+ *
+ * In short: "is storage configured for this tenant" now means "does this
+ * tenant have its own S3-compatible config" — never "is *some* R2 set up
+ * somewhere on the platform".
  */
 export async function isTenantStorageConfigured(tenantSlug?: string): Promise<boolean> {
-  if (tenantSlug) {
-    const customConfig = await getTenantStorageConfig(tenantSlug)
-    if (customConfig) return true
-  }
-  return isR2Configured()
+  if (!tenantSlug) return false
+  const customConfig = await getTenantStorageConfig(tenantSlug)
+  return !!customConfig
 }
 
 /**
@@ -240,7 +254,11 @@ export async function deleteFromStorage(storageKey: string): Promise<void> {
   const tenantSlug = extractTenantSlug(storageKey)
   const { s3, bucket, isCustom } = await getS3Client(tenantSlug || undefined)
 
-  if (isCustom || (await isR2Configured())) {
+  // Tenant-scoped op: only that tenant's own dedicated config counts (see
+  // isTenantStorageConfigured) — never fall back to platform-wide R2, or a
+  // shared-tier tenant's read/delete/presign would look in the wrong place
+  // the moment global R2 happens to be configured for something else.
+  if (isCustom) {
     const keys = [
       storageKey,
       storageKey.replace(/(\.[^.]+)$/, "_thumb$1"),
@@ -268,7 +286,11 @@ export async function deleteTenantStorage(tenantSlug: string): Promise<void> {
   const prefix = `upload/${tenantSlug}/`
   const { s3, bucket, isCustom } = await getS3Client(tenantSlug)
 
-  if (isCustom || (await isR2Configured())) {
+  // Tenant-scoped op: only that tenant's own dedicated config counts (see
+  // isTenantStorageConfigured) — never fall back to platform-wide R2, or a
+  // shared-tier tenant's read/delete/presign would look in the wrong place
+  // the moment global R2 happens to be configured for something else.
+  if (isCustom) {
     try {
       let continuationToken: string | undefined = undefined
       let totalDeleted = 0
@@ -327,7 +349,11 @@ export async function readFromStorage(storageKey: string): Promise<{ buffer: Buf
   const tenantSlug = extractTenantSlug(storageKey)
   const { s3, bucket, isCustom } = await getS3Client(tenantSlug || undefined)
 
-  if (isCustom || (await isR2Configured())) {
+  // Tenant-scoped op: only that tenant's own dedicated config counts (see
+  // isTenantStorageConfigured) — never fall back to platform-wide R2, or a
+  // shared-tier tenant's read/delete/presign would look in the wrong place
+  // the moment global R2 happens to be configured for something else.
+  if (isCustom) {
     try {
       const res = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: storageKey }))
       if (!res.Body) return null
@@ -350,7 +376,11 @@ export async function generatePresignedUrl(storageKey: string, expiresIn = 3600)
   const tenantSlug = extractTenantSlug(storageKey)
   const { s3, bucket, isCustom } = await getS3Client(tenantSlug || undefined)
   
-  if (isCustom || (await isR2Configured())) {
+  // Tenant-scoped op: only that tenant's own dedicated config counts (see
+  // isTenantStorageConfigured) — never fall back to platform-wide R2, or a
+  // shared-tier tenant's read/delete/presign would look in the wrong place
+  // the moment global R2 happens to be configured for something else.
+  if (isCustom) {
     const command = new GetObjectCommand({
       Bucket: bucket,
       Key: storageKey,
