@@ -140,6 +140,57 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   apiLogRetentionDays: "14",
 }
 
+/**
+ * Env vars that back a Platform Settings field. When a fresh deploy already
+ * has real credentials in its server-side `.env` (e.g. R2_ACCOUNT_ID for
+ * the "Penyimpanan Berkas (Cloudflare R2 / AWS S3)" section), the admin
+ * used to see those fields blank in the Settings UI until someone hand-typed
+ * the same values into the form — `getResolvedStorageConfig()` and friends
+ * already fell back to these env vars at *call* time, but `getPlatformSettings()`
+ * itself never did, so the UI looked unconfigured even while storage/payment/
+ * AI calls were quietly working off the env var. Applying the same fallback
+ * here means the admin sees (and can just confirm/Save) what's already
+ * active, instead of re-entering it — a DB-stored value (once saved) always
+ * wins over the env var.
+ */
+const SETTING_ENV_FALLBACKS: Partial<Record<keyof PlatformSettings, string>> = {
+  vercelAccessToken: "VERCEL_ACCESS_TOKEN",
+  v0ApiKey: "V0_API_KEY",
+  deepseekApiKey: "DEEPSEEK_API_KEY",
+  openaiApiKey: "OPENAI_API_KEY",
+  geminiApiKey: "GEMINI_API_KEY",
+  anthropicApiKey: "ANTHROPIC_API_KEY",
+  resendApiKey: "RESEND_API_KEY",
+  resendFrom: "RESEND_FROM",
+  smtpHost: "SMTP_HOST",
+  smtpPort: "SMTP_PORT",
+  smtpSecure: "SMTP_SECURE",
+  smtpUser: "SMTP_USER",
+  smtpPass: "SMTP_PASS",
+  smtpFrom: "SMTP_FROM",
+  midtransServerKey: "MIDTRANS_SERVER_KEY",
+  midtransClientKey: "MIDTRANS_CLIENT_KEY",
+  r2AccountId: "R2_ACCOUNT_ID",
+  r2AccessKeyId: "R2_ACCESS_KEY_ID",
+  r2SecretAccessKey: "R2_SECRET_ACCESS_KEY",
+  r2BucketName: "R2_BUCKET_NAME",
+  r2PublicUrl: "R2_PUBLIC_URL",
+  contaboClientId: "CONTABO_CLIENT_ID",
+  contaboClientSecret: "CONTABO_CLIENT_SECRET",
+  contaboApiUser: "CONTABO_API_USER",
+  contaboApiPassword: "CONTABO_API_PASSWORD",
+}
+
+function applyEnvFallbacks(settings: PlatformSettings): PlatformSettings {
+  const out = { ...settings }
+  for (const [field, envVar] of Object.entries(SETTING_ENV_FALLBACKS) as [keyof PlatformSettings, string][]) {
+    if (!out[field] && process.env[envVar]) {
+      ;(out[field] as string) = process.env[envVar] as string
+    }
+  }
+  return out
+}
+
 const CACHE_KEY = "system:platform-settings"
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -148,7 +199,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     try {
       const cached = await redis.get<PlatformSettings>(CACHE_KEY)
       if (cached && typeof cached === "object") {
-        return { ...DEFAULT_PLATFORM_SETTINGS, ...cached }
+        return applyEnvFallbacks({ ...DEFAULT_PLATFORM_SETTINGS, ...cached })
       }
     } catch {
       // fallback to DB
@@ -157,7 +208,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
 
   try {
     if (!db?.setting?.findMany) {
-      return DEFAULT_PLATFORM_SETTINGS
+      return applyEnvFallbacks(DEFAULT_PLATFORM_SETTINGS)
     }
     const settingsList = await db.setting.findMany({
       where: { tenantId: null }
@@ -169,15 +220,18 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     const combined = { ...DEFAULT_PLATFORM_SETTINGS, ...map } as PlatformSettings
 
     if (redis) {
+      // Cache the raw DB-backed values (pre-env-fallback) — env vars can
+      // differ per instance/redeploy, so they're applied fresh on every
+      // read rather than baked into the shared cache.
       redis.set(CACHE_KEY, combined, { ex: 300 }).catch(() => {})
     }
-    return combined
+    return applyEnvFallbacks(combined)
   } catch (error: any) {
     if (process.env.NODE_ENV !== "production" || process.env.NEXT_PHASE === "phase-production-build") {
-      return DEFAULT_PLATFORM_SETTINGS
+      return applyEnvFallbacks(DEFAULT_PLATFORM_SETTINGS)
     }
     console.warn("[Settings] Database unreachable, using default platform settings:", error?.message || error)
-    return DEFAULT_PLATFORM_SETTINGS
+    return applyEnvFallbacks(DEFAULT_PLATFORM_SETTINGS)
   }
 }
 

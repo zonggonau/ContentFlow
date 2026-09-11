@@ -904,7 +904,9 @@ export default function AdminSettingsPage() {
                       Penyimpanan Berkas (Cloudflare R2 / AWS S3)
                     </CardTitle>
                     <CardDescription className="text-xs text-muted-foreground mt-0.5">
-                      Kredensial S3 Object Storage untuk media upload pustaka konten.
+                      Kredensial S3 Object Storage untuk media upload pustaka konten. Jika sudah diset di environment
+                      server (R2_ACCOUNT_ID, dst.), nilainya otomatis terisi di sini — cukup klik Simpan untuk
+                      mengunci sebagai pengaturan platform.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="p-5 space-y-3.5">
