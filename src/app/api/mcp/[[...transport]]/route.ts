@@ -24,6 +24,7 @@ import { provisionTenantInfrastructure } from "@/lib/infrastructure/provisioner"
 import { FIELD_TYPES, FIELD_CATEGORIES } from "@/lib/field-types"
 import { hashMemberPassword } from "@/lib/member-auth"
 import { safeFetch } from "@/lib/safe-url"
+import { rateLimit, getTenantRateLimit } from "@/lib/rate-limit"
 
 // ─── Auth Helper & Payment Gatekeeper ─────────────────────────────────────────
 
@@ -154,6 +155,38 @@ const UNAUTHORIZED = {
   }]
 }
 
+/**
+ * Scope enforcement for API tokens.
+ *
+ * `AuthContext.permissions` was resolved from the token's own `permissions`
+ * array (e.g. a token minted as read-only: `["read"]`) but was previously
+ * only ever *read* by the `inspect_api_capabilities` tool to describe what a
+ * token could do — no write/delete/schema/webhook tool actually checked it,
+ * so a read-only token could still call `delete_content_type` and every
+ * other mutating tool. Every mutating/schema/webhook tool now calls
+ * `hasScope()` right after its `UNAUTHORIZED` check.
+ *
+ * `full_access` or `isSuperAdmin` bypasses all scopes, matching the
+ * `can*` booleans already computed in `inspect_api_capabilities`.
+ */
+type Scope = "read" | "write" | "delete" | "schema" | "webhooks"
+
+function hasScope(auth: AuthContext, scope: Scope): boolean {
+  if (auth.isSuperAdmin) return true
+  if (auth.permissions.includes("full_access")) return true
+  return auth.permissions.includes(scope)
+}
+
+function permissionDenied(scope: Scope) {
+  return {
+    content: [{
+      type: "text" as const,
+      text: `❌ Forbidden: this API token does not have the "${scope}" permission. Ask a workspace admin to grant it under Developer & API → API Tokens, or use a token with "full_access".`
+    }],
+    isError: true,
+  }
+}
+
 
 // ─── MCP Handler with Complete CRUD Capabilities ─────────────────────────────
 
@@ -175,6 +208,7 @@ const handler = createMcpHandler(
       async () => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const [contentTypes, singleTypes, components] = await Promise.all([
@@ -261,6 +295,7 @@ const handler = createMcpHandler(
       async ({ category }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         let types = FIELD_TYPES as unknown as any[]
         if (category) {
@@ -348,6 +383,7 @@ const handler = createMcpHandler(
       async () => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const contentTypes = await tenantDb.contentType.findMany({
@@ -393,6 +429,7 @@ const handler = createMcpHandler(
       async ({ slug }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const ct = await tenantDb.contentType.findFirst({
@@ -462,6 +499,7 @@ const handler = createMcpHandler(
       async ({ name, slug, description, showInCms, fields }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const cleanSlug = slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "-")
         const tenantDb = await getTenantDb(auth.tenantSlug)
@@ -543,6 +581,7 @@ const handler = createMcpHandler(
       async ({ slug, name, description, showInCms, fields }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const ct = await tenantDb.contentType.findFirst({
@@ -610,6 +649,7 @@ const handler = createMcpHandler(
       async ({ slug }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "delete")) return permissionDenied("delete")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const ct = await tenantDb.contentType.findFirst({
@@ -658,6 +698,7 @@ const handler = createMcpHandler(
       async ({ contentTypeSlug, limit, page, status, search, locale, sortOrder }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const ct = await tenantDb.contentType.findFirst({ 
@@ -729,6 +770,7 @@ const handler = createMcpHandler(
       async ({ id }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const entry = await tenantDb.contentEntry.findFirst({
@@ -778,6 +820,7 @@ const handler = createMcpHandler(
       async ({ contentTypeSlug, data, status, locale }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const ct = await tenantDb.contentType.findFirst({
@@ -825,6 +868,7 @@ const handler = createMcpHandler(
       async ({ id, data, status }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const existing = await tenantDb.contentEntry.findFirst({
@@ -866,6 +910,7 @@ const handler = createMcpHandler(
       async ({ id }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "delete")) return permissionDenied("delete")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const existing = await tenantDb.contentEntry.findFirst({
@@ -899,6 +944,7 @@ const handler = createMcpHandler(
       async () => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const singleTypes = await tenantDb.singleType.findMany({
@@ -943,6 +989,7 @@ const handler = createMcpHandler(
       async ({ singleTypeSlug, locale }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const targetLocale = locale || "id"
@@ -1010,6 +1057,7 @@ const handler = createMcpHandler(
       async ({ name, slug, description, fields, initialData, locale }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const cleanSlug = slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "-")
         const tenantDb = await getTenantDb(auth.tenantSlug)
@@ -1076,6 +1124,7 @@ const handler = createMcpHandler(
       async ({ singleTypeSlug, data, locale }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const targetLocale = locale || "id"
@@ -1143,6 +1192,7 @@ const handler = createMcpHandler(
       async ({ singleTypeSlug, name, description, fields }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const st = await tenantDb.singleType.findFirst({
@@ -1207,6 +1257,7 @@ const handler = createMcpHandler(
       async ({ singleTypeSlug }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "delete")) return permissionDenied("delete")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const st = await tenantDb.singleType.findFirst({
@@ -1245,6 +1296,7 @@ const handler = createMcpHandler(
       async () => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const components = await tenantDb.component.findMany({
@@ -1297,6 +1349,7 @@ const handler = createMcpHandler(
       async ({ name, slug, category, description, fields }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const cleanSlug = slug.toLowerCase().trim().replace(/[^a-z0-9-_]/g, "-")
         const tenantDb = await getTenantDb(auth.tenantSlug)
@@ -1356,6 +1409,7 @@ const handler = createMcpHandler(
       async ({ componentSlug }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const c = await tenantDb.component.findFirst({
@@ -1414,6 +1468,7 @@ const handler = createMcpHandler(
       async ({ componentSlug, name, category, description, fields }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const c = await tenantDb.component.findFirst({
@@ -1478,6 +1533,7 @@ const handler = createMcpHandler(
       async ({ componentSlug }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "delete")) return permissionDenied("delete")
 
         const tenantDb = await getTenantDb(auth.tenantSlug)
         const c = await tenantDb.component.findFirst({
@@ -1516,6 +1572,7 @@ const handler = createMcpHandler(
       async () => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const webhooks = await db.webhook.findMany({
           where: { tenantId: auth.tenantId },
@@ -1551,6 +1608,7 @@ const handler = createMcpHandler(
       async ({ id }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const webhook = await db.webhook.findFirst({
           where: { id, tenantId: auth.tenantId },
@@ -1589,6 +1647,7 @@ const handler = createMcpHandler(
       async ({ name, url, events, secret, enabled, hookType }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         try {
           const { assertPublicUrl } = await import("@/lib/safe-url")
@@ -1636,6 +1695,7 @@ const handler = createMcpHandler(
       async ({ id, name, url, events, enabled, secret }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const existing = await db.webhook.findFirst({
           where: { id, tenantId: auth.tenantId }
@@ -1684,6 +1744,7 @@ const handler = createMcpHandler(
       async ({ id }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "delete")) return permissionDenied("delete")
 
         const existing = await db.webhook.findFirst({
           where: { id, tenantId: auth.tenantId }
@@ -1714,6 +1775,7 @@ const handler = createMcpHandler(
       async ({ id }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const webhook = await db.webhook.findFirst({
           where: { id, tenantId: auth.tenantId }
@@ -1770,7 +1832,7 @@ const handler = createMcpHandler(
       "inspect_api_capabilities",
       {
         title: "Inspect API Capabilities & Permissions",
-        description: "Inspect active API key permissions (read, write, delete, schema, webhooks) to determine whether to build read-only or interactive dynamic components.",
+        description: "Inspect active API key permissions (read, write, delete) to determine whether to build read-only or interactive dynamic components.",
         inputSchema: {},
       },
       async () => {
@@ -1778,11 +1840,15 @@ const handler = createMcpHandler(
         if (!auth) return UNAUTHORIZED
 
         const permissions = auth.permissions || []
-        const canRead = permissions.includes("read") || permissions.includes("full_access") || auth.isSuperAdmin
-        const canWrite = permissions.includes("write") || permissions.includes("full_access") || auth.isSuperAdmin
-        const canDelete = permissions.includes("delete") || permissions.includes("full_access") || auth.isSuperAdmin
-        const canModifySchema = permissions.includes("schema") || permissions.includes("full_access") || auth.isSuperAdmin
-        const canManageWebhooks = permissions.includes("webhooks") || permissions.includes("full_access") || auth.isSuperAdmin
+        const canRead = hasScope(auth, "read")
+        const canWrite = hasScope(auth, "write")
+        const canDelete = hasScope(auth, "delete")
+        // Schema tools (content-type/component CRUD) and webhook tools are
+        // gated on "write"/"delete" (see hasScope call sites) — the
+        // dashboard's token-creation UI only ever grants read/write/delete,
+        // so there is no separate grantable "schema"/"webhooks" scope.
+        const canModifySchema = canWrite
+        const canManageWebhooks = canWrite
 
         return {
           content: [{
@@ -1897,6 +1963,7 @@ export default async function NewsPage() {
       async ({ projectName, files, envVars }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         if (!auth.isPaid) {
           return {
@@ -1982,6 +2049,7 @@ export default async function NewsPage() {
       async ({ deploymentId }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         try {
           const status = await getDeploymentStatus(deploymentId)
@@ -2022,6 +2090,7 @@ export default async function NewsPage() {
       async ({ projectId, domain }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         try {
           const result = await addDomainToProject(projectId, domain)
@@ -2101,6 +2170,7 @@ export default async function NewsPage() {
       async ({ key, value, projectId, targets }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         if (["NEXT_PUBLIC_SACMS_API_URL", "NEXT_PUBLIC_SACMS_TENANT", "SACMS_API_KEY"].includes(key)) {
           return {
@@ -2185,6 +2255,7 @@ export default async function NewsPage() {
       async ({ projectId }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         try {
           let resolvedProjectId = projectId
@@ -2236,6 +2307,7 @@ export default async function NewsPage() {
       async () => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const serverInfo = await db.infrastructureServer.findFirst({
           where: { tenantId: auth.tenantId },
@@ -2292,6 +2364,7 @@ export default async function NewsPage() {
       async ({ plan, region }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         if (!auth.isPaid) {
           return {
@@ -2374,6 +2447,7 @@ export default async function NewsPage() {
       async ({ page, pageSize, search, role, status }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = (await getTenantDb(auth.tenantSlug)) as any
         const limit = Math.min(pageSize || 20, 100)
@@ -2440,6 +2514,7 @@ export default async function NewsPage() {
       async ({ idOrEmail }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "read")) return permissionDenied("read")
 
         const tenantDb = (await getTenantDb(auth.tenantSlug)) as any
         const member = await tenantDb.member.findFirst({
@@ -2508,6 +2583,7 @@ export default async function NewsPage() {
       async ({ email, password, name, role, metadata }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = (await getTenantDb(auth.tenantSlug)) as any
         const cleanEmail = email.toLowerCase().trim()
@@ -2577,6 +2653,7 @@ export default async function NewsPage() {
       async ({ idOrEmail, name, role, status, password, metadata }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
 
         const tenantDb = (await getTenantDb(auth.tenantSlug)) as any
         const member = await tenantDb.member.findFirst({
@@ -2646,6 +2723,7 @@ export default async function NewsPage() {
       async ({ idOrEmail }) => {
         const auth = authContext.getStore()
         if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "delete")) return permissionDenied("delete")
 
         const tenantDb = (await getTenantDb(auth.tenantSlug)) as any
         const member = await tenantDb.member.findFirst({
@@ -2726,8 +2804,30 @@ function patchRequestUrl(req: Request): Request {
   return req
 }
 
-export async function GET(req: Request) {
+/**
+ * Shared by GET/POST/DELETE — the MCP protocol uses all three on the same
+ * endpoint, and every request needs the same auth → rate-limit → dispatch
+ * sequence. Two rate limits apply, in order:
+ *
+ *  1. Per client IP, BEFORE authentication — an invalid-token guess still
+ *     costs a DB lookup inside resolveToken(), so brute-forcing tokens must
+ *     be throttled before that lookup runs, not after.
+ *  2. Per tenant, once authenticated, scaled by plan (reusing the same
+ *     getTenantRateLimit() tiers the public content API uses) — so even a
+ *     valid token can't hammer expensive tools (deploy_to_vercel,
+ *     provision_contabo_vps) or the DB without bound.
+ */
+async function handleMcpRequest(req: Request): Promise<Response> {
   try {
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      req.headers.get("x-real-ip") ||
+      "unknown"
+    const ipLimit = await rateLimit(`mcp_ip:${ip}`, { limit: 120, windowSeconds: 60 })
+    if (!ipLimit.success) {
+      return NextResponse.json({ error: "Rate limit exceeded. Try again later." }, { status: 429 })
+    }
+
     const auth = await authenticateRequest(req)
     if (!auth) {
       return NextResponse.json({ error: "Unauthorized: Invalid or missing API token." }, { status: 401 })
@@ -2740,54 +2840,31 @@ export async function GET(req: Request) {
         upgradeUrl: `/dashboard/${auth.tenantSlug}/subscriptions`
       }, { status: 402 })
     }
+
+    const tenantLimit = await rateLimit(`mcp_tenant:${auth.tenantId}`, getTenantRateLimit(auth.plan))
+    if (!tenantLimit.success) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded for this workspace. Try again later." },
+        { status: 429 },
+      )
+    }
+
     const patchedReq = patchRequestUrl(req)
     return await authContext.run(auth, () => handler(patchedReq))
   } catch (error: any) {
-    console.error("MCP GET Error:", error)
+    console.error("MCP Error:", error)
     return NextResponse.json({ error: "Internal Server Error", details: error.message }, { status: 500 })
   }
+}
+
+export async function GET(req: Request) {
+  return handleMcpRequest(req)
 }
 
 export async function POST(req: Request) {
-  try {
-    const auth = await authenticateRequest(req)
-    if (!auth) {
-      return NextResponse.json({ error: "Unauthorized: Invalid or missing API token." }, { status: 401 })
-    }
-    if (auth.paymentError) {
-      return NextResponse.json({
-        error: auth.paymentError,
-        code: "PAYMENT_REQUIRED",
-        plan: auth.plan,
-        upgradeUrl: `/dashboard/${auth.tenantSlug}/subscriptions`
-      }, { status: 402 })
-    }
-    const patchedReq = patchRequestUrl(req)
-    return await authContext.run(auth, () => handler(patchedReq))
-  } catch (error: any) {
-    console.error("MCP POST Error:", error)
-    return NextResponse.json({ error: "Internal Server Error", details: error.message }, { status: 500 })
-  }
+  return handleMcpRequest(req)
 }
 
 export async function DELETE(req: Request) {
-  try {
-    const auth = await authenticateRequest(req)
-    if (!auth) {
-      return NextResponse.json({ error: "Unauthorized: Invalid or missing API token." }, { status: 401 })
-    }
-    if (auth.paymentError) {
-      return NextResponse.json({
-        error: auth.paymentError,
-        code: "PAYMENT_REQUIRED",
-        plan: auth.plan,
-        upgradeUrl: `/dashboard/${auth.tenantSlug}/subscriptions`
-      }, { status: 402 })
-    }
-    const patchedReq = patchRequestUrl(req)
-    return await authContext.run(auth, () => handler(patchedReq))
-  } catch (error: any) {
-    console.error("MCP DELETE Error:", error)
-    return NextResponse.json({ error: "Internal Server Error", details: error.message }, { status: 500 })
-  }
+  return handleMcpRequest(req)
 }
