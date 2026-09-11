@@ -125,7 +125,15 @@ function generateStorageKey(tenantSlug: string, filename: string): string {
   const ext = parts.pop()?.toLowerCase() || "bin"
   const baseName = parts.join(".").replace(/[^a-z0-9]/gi, "_").toLowerCase()
   const timestamp = Date.now()
-  return `upload/${tenantSlug}/.${ext}/${baseName}_${timestamp}.${ext}`
+  // The per-extension folder is deliberately NOT dot-prefixed (it used to be
+  // `.${ext}`, e.g. a literal `.jpg/` directory) — a hidden/dotfile path
+  // segment is routinely blocked or given special handling by CDNs, WAFs,
+  // and static file servers (nginx's default `location ~ /\.` deny rule is
+  // the classic example), which can make a perfectly-written local upload
+  // 404/403 at the edge even though the file exists on disk. Existing keys
+  // already stored with the old dot-prefixed folder keep resolving fine —
+  // this only changes what NEW uploads generate.
+  return `upload/${tenantSlug}/${ext}/${baseName}_${timestamp}.${ext}`
 }
 
 /**
