@@ -2,6 +2,7 @@ import { db } from '../database'
 import { Prisma } from '../../../prisma/generated-client'
 import { generateSecurePassword, encryptCredential, decryptCredential } from './encryption'
 import { generateCloudInitScript } from './cloud-init'
+import { generateVpsSshKeyPair } from './ssh-keys'
 import {
   createContaboInstance,
   getContaboInstance,
@@ -35,6 +36,7 @@ export interface ProvisionResult {
   message: string
   dbHost?: string
   mediaHost?: string
+  webHost?: string
   databaseUrl?: string
   storageConfig?: {
     endpoint: string
@@ -65,6 +67,7 @@ export async function provisionTenantInfrastructure(
   const baseDomain = process.env.INFRA_BASE_DOMAIN || 'sacms.cloud'
   const dbDomain = `db-${tenant.slug}.${baseDomain}`
   const mediaDomain = `media-${tenant.slug}.${baseDomain}`
+  const webDomain = `${tenant.slug}.${baseDomain}`
 
   const dbUser = 'sacms_user'
   const dbName = 'sacms_db'
@@ -73,6 +76,11 @@ export async function provisionTenantInfrastructure(
   const minioUser = 'sacms_storage'
   const minioPassword = generateSecurePassword(32)
   const minioBucket = 'sacms-media'
+
+  // Deploy keypair for `deploy_to_vps` — public half goes into cloud-init
+  // below, private half is encrypted into InfrastructureCredential once the
+  // server record is created.
+  const sshKeyPair = generateVpsSshKeyPair(`sacms-deploy@${tenant.slug}`)
 
   const requestedPlan = options.plan || 'vps-s'
   const planConfig = CONTABO_PLANS[requestedPlan] || CONTABO_PLANS['vps-s']
@@ -95,6 +103,7 @@ export async function provisionTenantInfrastructure(
       dbPort: 5432,
       mediaHost: mediaDomain,
       mediaPort: 443,
+      webHost: webDomain,
       healthStatus: 'unknown',
     },
   })
@@ -114,6 +123,8 @@ export async function provisionTenantInfrastructure(
       minioBucket,
       dbDomain,
       mediaDomain,
+      webDomain,
+      sshPublicKey: sshKeyPair.publicKeyLine,
     })
 
     // 4. Order/Create Instance on Contabo (VPS or VDS)
@@ -147,6 +158,7 @@ export async function provisionTenantInfrastructure(
     if (serverIpv4) {
       await createOrUpdateDnsRecord(dbDomain, serverIpv4, false)
       await createOrUpdateDnsRecord(mediaDomain, serverIpv4, false)
+      await createOrUpdateDnsRecord(webDomain, serverIpv4, false)
     }
 
     // 8. Build Connection Strings & Endpoints
@@ -167,6 +179,9 @@ export async function provisionTenantInfrastructure(
         s3Endpoint,
         s3Bucket: minioBucket,
         s3PublicUrl,
+        sshUser: 'root',
+        sshPrivateKeyEncrypted: encryptCredential(sshKeyPair.privateKeyPem),
+        sshPublicKey: sshKeyPair.publicKeyLine,
       },
     })
 
@@ -193,6 +208,7 @@ export async function provisionTenantInfrastructure(
       message: 'Dedicated VPS provisioning initiated. Server is configuring and will activate once database is online.',
       dbHost: dbDomain,
       mediaHost: mediaDomain,
+      webHost: webDomain,
       databaseUrl: connectionString,
       storageConfig,
     }

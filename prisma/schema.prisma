@@ -928,6 +928,10 @@ model InfrastructureServer {
   dbPort             Int                       @default(5432)
   mediaHost          String?
   mediaPort          Int                       @default(443)
+  /// Domain the appliance's `frontend` container is reachable at
+  /// (see cloud-init.ts's Caddyfile) — the target of the `deploy_to_vps`
+  /// MCP tool's deployments.
+  webHost            String?
   lastHealthCheckAt  DateTime?
   healthStatus       String                    @default("unknown") // healthy | degraded | unhealthy | unknown
   metricsSnapshot    Json?
@@ -953,6 +957,14 @@ model InfrastructureCredential {
   s3Endpoint                  String
   s3Bucket                    String               @default("sacms-media")
   s3PublicUrl                 String?
+  // SSH access for remote app deploys (`deploy_to_vps` MCP tool) — a
+  // dedicated ed25519 keypair generated at provisioning time, public half
+  // injected into the VPS via cloud-init, private half kept here encrypted.
+  // Null for servers provisioned before this existed (cloud-init only runs
+  // once at boot, so it can't be retrofitted onto an already-running VPS).
+  sshUser                     String               @default("root")
+  sshPrivateKeyEncrypted      String?              @db.Text
+  sshPublicKey                String?              @db.Text
   createdAt                   DateTime             @default(now())
   rotatedAt                   DateTime?
   server                      InfrastructureServer @relation(fields: [serverId], references: [id], onDelete: Cascade)

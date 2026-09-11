@@ -11,6 +11,11 @@ export interface CloudInitConfig {
   webDomain?: string
   adminEmail?: string
   allowedManagementIps?: string[]
+  /** OpenSSH `authorized_keys` line for the deploy keypair (see
+   *  lib/infrastructure/ssh-keys.ts) — injected for root so
+   *  `deploy_to_vps` can SSH in later. Omitted entirely if not supplied
+   *  (older callers / Contabo simulation mode). */
+  sshPublicKey?: string
 }
 
 /**
@@ -31,6 +36,7 @@ export function generateCloudInitScript(config: CloudInitConfig): string {
     webDomain,
     adminEmail = 'admin@sacms.cloud',
     allowedManagementIps = [],
+    sshPublicKey,
   } = config
 
   // Extract SaCMS server IPs for firewall whitelist
@@ -117,13 +123,10 @@ services:
       - sacms_network
 
   frontend:
-    image: node:20-alpine
+    build:
+      context: ./site
     container_name: sacms_frontend
     restart: always
-    working_dir: /app
-    volumes:
-      - ./site:/app
-    command: /bin/sh -c "if [ -f server.js ]; then node server.js; elif [ -f package.json ]; then npm run start 2>/dev/null || node -e 'require(\\"http\\").createServer((req, res) => { res.writeHead(200, {\"Content-Type\": \"text/html\"}); res.end(\"<h1>SaCMS Frontend Initializing...</h1>\"); }).listen(3000)'; else node -e 'require(\"http\").createServer((req, res) => { res.writeHead(200, {\"Content-Type\": \"text/html\"}); res.end(\"<div style=\\\"font-family:sans-serif;text-align:center;padding:50px;background:#090d16;color:#f8fafc;min-height:100vh\\\"><h1>🚀 SaCMS Dedicated VPS Ready</h1><p style=\\\"color:#94a3b8\\\">Website frontend is active and ready to receive deployments from SaCMS AI Studio.</p></div>\"); }).listen(3000);'; fi"
     ports:
       - "3000:3000"
     environment:
@@ -177,10 +180,30 @@ ${webDomain ? `${webDomain}` : ':80'} {
 }
 `.trim()
 
+  // Placeholder site shown until the tenant's first real `deploy_to_vps`
+  // overwrites everything under /opt/sacms/site (Dockerfile included) — see
+  // lib/infrastructure/vps-deployer.ts.
+  const placeholderServerJs = `require('http').createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html'});res.end('<div style="font-family:sans-serif;text-align:center;padding:50px;background:#090d16;color:#f8fafc;min-height:100vh"><h1>SaCMS Dedicated VPS Ready</h1><p style="color:#94a3b8">Website frontend is active and ready to receive deployments via the deploy_to_vps MCP tool.</p></div>')}).listen(process.env.PORT||3000)`
+
+  const placeholderDockerfile = `FROM node:20-alpine
+WORKDIR /app
+COPY server.js .
+EXPOSE 3000
+CMD ["node", "server.js"]`
+
+  const sshUsersBlock = sshPublicKey
+    ? `
+users:
+  - name: root
+    ssh_authorized_keys:
+      - ${sshPublicKey}
+`
+    : ''
+
   const cloudConfig = `#cloud-config
 package_update: true
 package_upgrade: false
-
+${sshUsersBlock}
 packages:
   - docker.io
   - docker-compose-plugin
@@ -199,6 +222,16 @@ ${dockerComposeContent.split('\n').map(line => '      ' + line).join('\n')}
     content: |
 ${caddyfileContent.split('\n').map(line => '      ' + line).join('\n')}
 
+  - path: /opt/sacms/site/Dockerfile
+    permissions: '0644'
+    content: |
+${placeholderDockerfile.split('\n').map(line => '      ' + line).join('\n')}
+
+  - path: /opt/sacms/site/server.js
+    permissions: '0644'
+    content: |
+      ${placeholderServerJs}
+
   - path: /opt/sacms/setup.sh
     permissions: '0755'
     content: |
@@ -213,12 +246,9 @@ ${caddyfileContent.split('\n').map(line => '      ' + line).join('\n')}
 ${ufwPostgresRules}
       ufw --force enable
 
-      echo "[SaCMS] Initializing frontend site directory..."
-      mkdir -p /opt/sacms/site
-
       echo "[SaCMS] Starting Docker containers..."
       cd /opt/sacms
-      docker compose up -d
+      docker compose up -d --build
 
       echo "[SaCMS] Provisioning completed successfully for tenant: ${tenantSlug}"
 

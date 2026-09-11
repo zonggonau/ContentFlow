@@ -2036,6 +2036,87 @@ export default async function NewsPage() {
       }
     )
 
+    // ── deploy_to_vps ─────────────────────────────────────────────────────────
+    server.registerTool(
+      "deploy_to_vps",
+      {
+        title: "Deploy Website to Dedicated Contabo VPS",
+        description:
+          "Deploy a Next.js/Node project straight to this workspace's own dedicated Contabo VPS over SSH — " +
+          "the alternative to deploy_to_vercel for workspaces on a VPS/VDS/Storage plan with a provisioned " +
+          "appliance. Requires a package.json; a Dockerfile is auto-generated if the project doesn't include one. " +
+          "The workspace's saved Environment vars (see the dashboard's Environment tab) are always injected " +
+          "automatically as .env.production, merged with the fixed SACMS_* connection vars.",
+        inputSchema: {
+          files: z.array(z.object({
+            name: z.string().describe("File path relative to the project root (e.g. 'package.json', 'app/page.tsx')"),
+            content: z.string().describe("Raw file content"),
+          })).describe("The full project's files (must include package.json)"),
+          domain: z.string().optional().describe("Domain to record as the live URL (defaults to the VPS's own generated subdomain)"),
+        },
+      },
+      async ({ files, domain }) => {
+        const auth = authContext.getStore()
+        if (!auth) return UNAUTHORIZED
+        if (!hasScope(auth, "write")) return permissionDenied("write")
+
+        if (!auth.isPaid) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `❌ Payment Required: Fitur deploy VPS memerlukan workspace berstatus PAID. Silakan selesaikan pembayaran di dashboard: /dashboard/${auth.tenantSlug}/subscriptions`,
+            }],
+            isError: true,
+          }
+        }
+
+        if (auth.hostingType !== "dedicated_vps") {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `❌ Workspace ini tidak punya dedicated VPS aktif. Upgrade ke paket VPS/VDS/Storage dan tunggu provisioning selesai, atau pakai deploy_to_vercel untuk hosting shared.`,
+            }],
+            isError: true,
+          }
+        }
+
+        try {
+          const { deployAiWebsiteToVps } = await import("@/lib/infrastructure/vps-deployer")
+          const { resolveFrontendEnv } = await import("@/lib/infrastructure/frontend-env")
+          const apiOrigin = process.env.NEXT_PUBLIC_APP_URL || "https://sacms.cloud"
+          const env = await resolveFrontendEnv(auth.tenantId, auth.tenantSlug, apiOrigin)
+
+          const result = await deployAiWebsiteToVps(auth.tenantId, {
+            files: files as { name: string; content: string }[],
+            domain,
+            env,
+          })
+
+          if (!result.success) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: `❌ Deploy ke VPS gagal: ${result.error}${result.buildLogTail ? `\n\n--- Log build (60 baris terakhir) ---\n${result.buildLogTail}` : ""}`,
+              }],
+              isError: true,
+            }
+          }
+
+          return {
+            content: [{
+              type: "text" as const,
+              text: `🚀 Deploy ke VPS Sukses!\n- Live URL: ${result.url}\n- VPS IP: ${result.vpsIp}\n- Server: ${result.serverName}\n- File terkirim: ${result.deliveryFileCount}\n- Env terkirim: ${(result.envFileVars || []).join(", ")}`,
+            }],
+          }
+        } catch (err: any) {
+          return {
+            content: [{ type: "text" as const, text: `❌ Gagal deploy ke VPS: ${err.message}` }],
+            isError: true,
+          }
+        }
+      },
+    )
+
     // ── get_vercel_deployment_status ─────────────────────────────────────────
     server.registerTool(
       "get_vercel_deployment_status",

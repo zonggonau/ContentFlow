@@ -224,6 +224,7 @@ const MCP_TOOLS_CATALOG: McpToolDoc[] = [
 
   // Hosting & Cloud Deployment MCP Tools
   { name: "deploy_to_vercel", category: "hosting", description: "Deploy file source code website/frontend langsung ke Vercel Serverless hosting. Mengembalikan URL deployment produksi.", inputs: ["projectName", "files", "envVars"] },
+  { name: "deploy_to_vps", category: "hosting", description: "Deploy project Next.js/Node langsung ke dedicated Contabo VPS workspace ini lewat SSH — build & restart otomatis, env dari tab Environment ikut disuntikkan. Untuk workspace paket VPS/VDS/Storage.", inputs: ["files", "domain?"] },
   { name: "get_vercel_deployment_status", category: "hosting", description: "Mengecek progres build, status ready, dan URL live dari sebuah deployment Vercel.", inputs: ["deploymentId"] },
   { name: "configure_vercel_domain", category: "hosting", description: "Menghubungkan dan memverifikasi domain kustom pada sebuah project Vercel, dengan diagnostik DNS.", inputs: ["projectId", "domain"] },
   { name: "add_vercel_env", category: "hosting", description: "Membuat / memperbarui environment variable pada project Vercel workspace ini (upsert). Nilai dienkripsi kecuali diawali NEXT_PUBLIC_. Ikut tampil di tab Environment dashboard.", inputs: ["key", "value", "projectId?", "targets?"] },
